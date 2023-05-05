@@ -1,7 +1,7 @@
 {
-  "name": "langchain-mini",
+  "name": "bingchain",
   "version": "1.0.0",
-  "description": "",
+  "description": "Langchain in ~110 lines of code",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
