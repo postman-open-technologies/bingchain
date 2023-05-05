@@ -10,26 +10,28 @@ const rl = readline.createInterface({ input, output });
 const promptTemplate = fs.readFileSync("prompt.txt", "utf8");
 const mergeTemplate = fs.readFileSync("merge.txt", "utf8");
 
-// use serpapi to answer the question
-const googleSearch = async (question) =>
+const colour = (process.env.NODE_DISABLE_COLORS || !process.stdout.isTTY) ?
+    { red: '', yellow: '', green: '', normal: '' } :
+    { red: '\x1b[31m', yellow: '\x1b[33;1m', green: '\x1b[32m', normal: '\x1b[0m' };
+
+// use Microsoft Bing to answer the question
+const bingSearch = async (question) =>
   await fetch(
-    `https://serpapi.com/search?api_key=${process.env.SERPAPI_API_KEY}&q=${question}`
-  )
+    `https://api.bing.microsoft.com/v7.0/search?q=${escape(question)}`, { headers: {"Ocp-Apim-Subscription-Key": process.env.BING_API_KEY } })
     .then((res) => res.json())
     .then(
-      (res) =>
+      (res) => {
         // try to pull the answer from various components of the response
-        res.answer_box?.answer ||
-        res.answer_box?.snippet ||
-        res.organic_results?.[0]?.snippet
+        return res.webPages.value[0].snippet
+      }
     );
 
 // tools that can be used to answer questions
 const tools = {
   search: {
     description:
-      "a search engine. useful for when you need to answer questions about current events. input should be a search query.",
-    execute: googleSearch,
+      "A search engine. Useful for when you need to answer questions about current events or retrieve in-depth answers. Input should be a search query.",
+    execute: bingSearch,
   },
   calculator: {
     description:
@@ -102,11 +104,11 @@ const mergeHistory = async (question, history) => {
 // main loop - answer the user's questions
 let history = "";
 while (true) {
-  let question = await rl.question("How can I help? ");
+  let question = await rl.question(`${colour.red}How can I help? >${colour.yellow} `);
   if (history.length > 0) {
     question = await mergeHistory(question, history);
   }
   const answer = await answerQuestion(question);
-  console.log(answer);
+  console.log(`${colour.green}${answer}`);
   history += `Q:${question}\nA:${answer}\n`;
 }

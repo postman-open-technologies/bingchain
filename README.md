@@ -1,6 +1,6 @@
-# 🦜️🔗 LangChain-mini 
+# 🕵️🔗 BingChain 
 
-This is a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~100 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Google search and a calculator) in order to hold conversations and answer questions. 
+This is a fork of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~110 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search and a calculator) in order to hold conversations and answer questions. 
 
 Here's an example:
 
@@ -25,18 +25,20 @@ Install dependencies, and run (with node >= v18):
 % npm install
 ~~~
 
-You'll need to have both an OpenAI and SerpApi keys. These can be supplied to the application via a `.env` file:
+You'll need to have both an OpenAI and Bing API keys. These can be supplied to the application via a `.env` file:
 
 ~~~
 OPENAI_API_KEY="..."
-SERPAPI_API_KEY="..."
+BING_API_KEY="..."
 ~~~
+
+The clever part is the initial prompt, which is held in `prompt.txt`.
 
 You can now run the chain:
 
 ~~~
 % node index.mjs
-How can I help? what was the name of the first man on the moon?
+How can I help? > what was the name of the first man on the moon?
 Neil Armstrong
 ~~~
 
