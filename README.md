@@ -1,6 +1,6 @@
 # 🕵️🔗 BingChain 
 
-This is a fork of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~110 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search and a calculator) in order to hold conversations and answer questions. 
+This is a fork of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~110 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search, URL retrieval and a calculator) in order to hold conversations and answer questions.
 
 Here's an example:
 
@@ -41,4 +41,9 @@ You can now run the chain:
 How can I help? > what was the name of the first man on the moon?
 Neil Armstrong
 ~~~
+
+## Future work planned
+
+* A new tool to `install` an `ai-plugin.json` manifest
+* A new tool to call `api` endpoints
 
