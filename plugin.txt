@@ -1,1 +1,1 @@
-# TODO
+You now have access to these API endpoints defined by the following OpenAPI definition in YAML format. You may call any of the endpoints, using the HTTP methods given in the operation object keys. You should use the most appropriate endpoint for the given task, taking into account the description fields of the API info object, and the operation object.

@@ -23,8 +23,9 @@ html2md.remove('script');
 
 const rl = readline.createInterface({ input, output });
 
-const promptTemplate = fs.readFileSync("prompt.txt", "utf8");
-const mergeTemplate = fs.readFileSync("merge.txt", "utf8");
+const promptTemplate = fs.readFileSync("./prompt.txt", "utf8");
+const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
+const pluginTemplate = fs.readFileSync("./plugin.txt", "utf8");
 
 const colour = (process.env.NODE_DISABLE_COLORS || !process.stdout.isTTY) ?
     { red: '', yellow: '', green: '', normal: '' } :
@@ -52,10 +53,65 @@ const retrieveURL = async (url) =>
   await fetch(url)
     .then((res) => res.text())
     .then((txt) => {
-      let text = html2md.turndown(txt).substring(0,MAX_STR_SIZE);
+      let text = html2md.turndown(txt).substring(0, MAX_STR_SIZE);
       return text;
     })
     .catch((ex) => '');
+
+const install = async (domain) => {
+  const pluginManifest = `https://${domain}/.well-known/ai-plugin.json`;
+  console.log('Plugin manifest should be at',pluginManifest);
+  let res = { ok: false, status: 404 };
+  let plugin;
+  let question = '';
+  try {
+    res = await fetch(pluginManifest);
+  }
+  catch (ex) {}
+  if (res.ok) {
+    plugin = await res.json();
+    if (plugin.api.type === 'openapi') {
+      res = { ok: false, status: 404 };
+      try {
+        console.log('API definition should be at',plugin.api.url);
+        res = await fetch(plugin.api.url);
+      }
+      catch (ex) {}
+      if (res.ok) {
+        const apiDef = await res.text();
+	try {
+          const openApiYaml = yaml.stringify(yaml.parse(apiDef));
+          question = pluginTemplate + '\n\n' + openApiYaml;
+          console.log(`${colour.green}Successfully installed the ${domain} plugin and API!${colour.normal}`);
+        }
+	catch (ex) {
+	  console.warn(`${colour.red}${ex.message}${colour.normal}`);
+	}
+      }
+      else {
+	console.log(`${colour.red}Failed to fetch API definition!${colour.normal}`);
+      }
+    }
+  }
+  return question;
+};
+
+const apicall = async (endpoint) => {
+  const components = endpoint.split(':');
+  const method = components.shift(1).toLowerCase();
+  const path = components.join(':');
+  console.log('Using the',method,'method to call the',path,'endpoint');
+  let res = { ok: false, status: 404 };
+  try {
+    res = await fetch(path,{ method });
+  }
+  catch (ex) {}
+  if (res.ok) {
+    const json = await res.json(); // TODO XML APIs
+    return yaml.stringify(json).substring(0, MAX_STR_SIZE);
+  }
+  return '404 - not found';
+};
 
 // tools that can be used to answer questions
 const tools = {
@@ -73,6 +129,15 @@ const tools = {
     description:
       "A URL retrieval tool. Useful for returning the plain text of a web URL. Javascript is not supported. Input should be an absolute URL.",
     execute: retrieveURL,
+  },
+  install: {
+    description:
+      "A tool used to install API plugins. Input should be a bare domain name without a scheme/protocol or path.",
+    execute: install,
+  },
+  apicall: {
+    description: "A tool used to call a known API endpoint. Input should be in the form of an HTTP method in capital letters, followed by a colon (:) and the URL to call, made up of the relevant servers object entry and the selected operation's pathitem object key, having already replaced the templated path parameters.",
+   execute: apicall,
   }
 };
 if (!process.env.BING_API_KEY) tools.search.execute = nop;
@@ -146,6 +211,13 @@ const mergeHistory = async (question, history) => {
 let history = "";
 while (true) {
   let question = await rl.question(`${colour.red}How can I help? >${colour.yellow} `);
+  let questionLC = question.trim().toLowerCase();
+  if (questionLC.startsWith('install ') && questionLC.indexOf(' plugin') >= 0) {
+    questionLC = questionLC.split('install ').join('');
+    questionLC = questionLC.split('the ').join('');
+    questionLC = questionLC.split(' plugin').join('');
+    question = await install(questionLC.trim());
+  }
   if (history.length > 0) {
     question = await mergeHistory(question, history);
   }
