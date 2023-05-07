@@ -1,4 +1,4 @@
-Answer the following questions as best you can. If you do not know the answer, you should simply say so, not invent anything. You have access to the following tools:
+Answer the following questions as best you can. If you do not know the answer, you should simply say so, not invent anything. Always think step by step. You have access to the following tools:
 
 ${tools}
 
