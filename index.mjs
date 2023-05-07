@@ -2,6 +2,7 @@ import env from "dotenv";
 env.config();
 
 import fs from "node:fs";
+import http from "node:http";
 import yaml from "yaml";
 import { Parser } from "expr-eval";
 import * as readline from "node:readline/promises";
@@ -15,10 +16,12 @@ const gfm = turndownPluginGfm.gfm
 const tables = turndownPluginGfm.tables
 const strikethrough = turndownPluginGfm.strikethrough
 
-const TOKEN_LIMIT = 3072;
+const TOKEN_LIMIT = 2048;
 const RESPONSE_LIMIT = 512;
 const TEMPERATURE = parseFloat(process.env.temperature) || 0.7;
 const token_cache = new Map();
+let history = "";
+let apiServer = "";
 
 // Use the gfm, table and strikethrough plugins
 html2md.use([gfm, tables, strikethrough]);
@@ -36,7 +39,7 @@ const colour = (process.env.NODE_DISABLE_COLORS || !process.stdout.isTTY) ?
     { red: '\x1b[31m', yellow: '\x1b[33;1m', green: '\x1b[32m', blue: '\x1b[34m', normal: '\x1b[0m' };
 
 const truncate = (text) => {
-  while (!isWithinTokenLimit(text, TOKEN_LIMIT - RESPONSE_LIMIT, token_cache)) {
+  while (!isWithinTokenLimit(history + '\n' + text, TOKEN_LIMIT - RESPONSE_LIMIT, token_cache)) {
     text = text.substring(0,Math.round(text.length*0.9));
   }
   return text;
@@ -89,7 +92,11 @@ const install = async (domain) => {
       if (res.ok) {
         const apiDef = await res.text();
 	try {
-          const openApiYaml = yaml.stringify(yaml.parse(apiDef));
+          const openApi = yaml.parse(apiDef);
+          if (openApi && openApi.openapi && openApi.servers) {
+            apiServer = openApi.servers[0].url;
+          }
+          const openApiYaml = yaml.stringify(openApi);
           question = pluginTemplate + '\n\n' + openApiYaml;
           console.log(`${colour.green}Successfully installed the ${domain} plugin and API.${colour.normal}`);
         }
@@ -108,18 +115,30 @@ const install = async (domain) => {
 const apicall = async (endpoint) => {
   const components = endpoint.split(':');
   const method = components.shift(1).toLowerCase();
-  const path = components.join(':').trim();
+  const remaining = components.join(':').trim();
+  let path = remaining.split('#')[0];
+  if (!path.startsWith('http')) {
+    path = apiServer+path;
+  }
+  const hdrs = remaining.split('#')[1];
+  let headers = {};
+  if (hdrs) try {
+    headers = JSON.parse(hdrs);
+  }
+  catch (ex) {
+    console.log(`${colour.red}Could not parse headers map JSON${colour.normal}`);
+  }
   console.log('Using the',method,'method to call the',path,'endpoint');
   let res = { ok: false, status: 404 };
   try {
-    res = await fetch(path,{ method });
+    res = await fetch(path,{ method, headers });
   }
   catch (ex) {}
   if (res.ok) {
     const json = await res.json(); // TODO XML APIs
     return truncate(yaml.stringify(json));
   }
-  return '404 - not found';
+  return `${res.status} - ${http.STATUS_CODES[res.status]}`;
 };
 
 // tools that can be used to answer questions
@@ -131,7 +150,7 @@ const tools = {
   },
   calculator: {
     description:
-      "Useful for getting the result of a math expression. The input to this tool should be a valid mathematical expression that could be executed by a simple calculator.",
+      "Useful for getting the result of a mathematical expression. The input to this tool should be a valid mathematical expression that could be executed by a simple scientific calculator.",
     execute: (input) => {
       let result = '';
       try {
@@ -143,7 +162,7 @@ const tools = {
   },
   retrieve: {
     description:
-      "A URL retrieval tool. Useful for returning the plain text of a web URL. Javascript is not supported. Input should be an absolute URL.",
+      "A URL retrieval tool. Useful for returning the plain text of a web site from its URL. Javascript is not supported. Input should be in the form of an absolute URL.",
     execute: retrieveURL,
   },
   install: {
@@ -152,7 +171,7 @@ const tools = {
     execute: install,
   },
   apicall: {
-    description: "A tool used to call a known API endpoint. Input should be in the form of an HTTP method in capital letters, followed by a colon (:) and the URL to call, made up of the relevant servers object entry and the selected operation's pathitem object key, having already replaced the templated path parameters.",
+    description: "A tool used to call a known API endpoint. Input should be in the form of an HTTP method in capital letters, followed by a colon (:) and the URL to call, made up of the relevant servers object entry and the selected operation's pathitem object key, having already replaced the templated path parameters. Headers should be provided after a # sign in the form of a JSON object of key/value pairs.",
    execute: apicall,
   }
 };
@@ -210,7 +229,9 @@ const answerQuestion = async (question) => {
       const result = await tools[action].execute(actionInput);
       prompt += `Observation: ${result}\n`;
     } else {
-      let answer = response.match(/Final Answer:(.*)/)?.[1].trim();
+      let answer = response.match(/Final Answer:(.*)/);
+      answer.shift(1);
+      answer = answer.join('\n').trim();
       if (answer) return answer;
       answer = response.match(/Observation:(.*)/)?.[1].trim();
       return answer||'No answer'; // sometimes we don't get a "Final Answer"
@@ -227,7 +248,6 @@ const mergeHistory = async (question, history) => {
 };
 
 // main loop - answer the user's questions
-let history = "";
 while (true) {
   let question = await rl.question(`${colour.red}How can I help? >${colour.yellow} `);
   let questionLC = question.trim().toLowerCase();
