@@ -8,13 +8,17 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import TurndownService from 'turndown';
 import turndownPluginGfm from 'turndown-plugin-gfm';
+import { isWithinTokenLimit } from 'gpt-tokenizer';
 
 const html2md = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', preformattedCode: true });
 const gfm = turndownPluginGfm.gfm
 const tables = turndownPluginGfm.tables
 const strikethrough = turndownPluginGfm.strikethrough
 
-const MAX_STR_SIZE=3700;
+const TOKEN_LIMIT = 3072;
+const RESPONSE_LIMIT = 512;
+const TEMPERATURE = process.env.temperature || 0.7;
+const token_cache = new Map();
 
 // Use the gfm, table and strikethrough plugins
 html2md.use([gfm, tables, strikethrough]);
@@ -28,8 +32,15 @@ const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
 const pluginTemplate = fs.readFileSync("./plugin.txt", "utf8");
 
 const colour = (process.env.NODE_DISABLE_COLORS || !process.stdout.isTTY) ?
-    { red: '', yellow: '', green: '', normal: '' } :
-    { red: '\x1b[31m', yellow: '\x1b[33;1m', green: '\x1b[32m', normal: '\x1b[0m' };
+    { red: '', yellow: '', green: '', blue: '', normal: '' } :
+    { red: '\x1b[31m', yellow: '\x1b[33;1m', green: '\x1b[32m', blue: '\x1b[34m', normal: '\x1b[0m' };
+
+const truncate = (text) => {
+  while (!isWithinTokenLimit(text, TOKEN_LIMIT - RESPONSE_LIMIT, token_cache)) {
+    text = text.substring(0,Math.round(text.length*0.9));
+  }
+  return text;
+};
 
 // fallback tool in case API key not specified
 const nop = async (question) => '';
@@ -53,14 +64,13 @@ const retrieveURL = async (url) =>
   await fetch(url)
     .then((res) => res.text())
     .then((txt) => {
-      let text = html2md.turndown(txt).substring(0, MAX_STR_SIZE);
+      let text = truncate(html2md.turndown(txt));
       return text;
     })
     .catch((ex) => '');
 
 const install = async (domain) => {
   const pluginManifest = `https://${domain}/.well-known/ai-plugin.json`;
-  console.log('Plugin manifest should be at',pluginManifest);
   let res = { ok: false, status: 404 };
   let plugin;
   let question = '';
@@ -73,7 +83,6 @@ const install = async (domain) => {
     if (plugin.api.type === 'openapi') {
       res = { ok: false, status: 404 };
       try {
-        console.log('API definition should be at',plugin.api.url);
         res = await fetch(plugin.api.url);
       }
       catch (ex) {}
@@ -82,7 +91,7 @@ const install = async (domain) => {
 	try {
           const openApiYaml = yaml.stringify(yaml.parse(apiDef));
           question = pluginTemplate + '\n\n' + openApiYaml;
-          console.log(`${colour.green}Successfully installed the ${domain} plugin and API!${colour.normal}`);
+          console.log(`${colour.green}Successfully installed the ${domain} plugin and API.${colour.normal}`);
         }
 	catch (ex) {
 	  console.warn(`${colour.red}${ex.message}${colour.normal}`);
@@ -99,7 +108,7 @@ const install = async (domain) => {
 const apicall = async (endpoint) => {
   const components = endpoint.split(':');
   const method = components.shift(1).toLowerCase();
-  const path = components.join(':');
+  const path = components.join(':').trim();
   console.log('Using the',method,'method to call the',path,'endpoint');
   let res = { ok: false, status: 404 };
   try {
@@ -108,7 +117,7 @@ const apicall = async (endpoint) => {
   catch (ex) {}
   if (res.ok) {
     const json = await res.json(); // TODO XML APIs
-    return yaml.stringify(json).substring(0, MAX_STR_SIZE);
+    return truncate(yaml.stringify(json));
   }
   return '404 - not found';
 };
@@ -160,8 +169,8 @@ const completePrompt = async (prompt) =>
     body: JSON.stringify({
       model: "text-davinci-003",
       prompt,
-      max_tokens: 256,
-      temperature: 0.7,
+      max_tokens: RESPONSE_LIMIT,
+      temperature: TEMPERATURE,
       stream: false,
       stop: ["Observation:"],
     }),
@@ -174,7 +183,7 @@ const completePrompt = async (prompt) =>
     })
     .then((res) => {
       console.log(`${colour.red}${prompt}${colour.normal}`);
-      console.log(`${colour.green}${res}${colour.normal}`);
+      console.log(`${colour.blue}${res}${colour.normal}`);
       return res;
     });
 
@@ -201,7 +210,10 @@ const answerQuestion = async (question) => {
       const result = await tools[action].execute(actionInput);
       prompt += `Observation: ${result}\n`;
     } else {
-      return response.match(/Final Answer: (.*)/)?.[1];
+      let answer = response.match(/Final Answer: (.*)/)?.[1];
+      if (answer) return answer;
+      answer = response.match(/Observation: (.*)/)?.[1];
+      return answer; // sometimes we don't get a "Final Answer"
     }
   }
 };
@@ -229,6 +241,6 @@ while (true) {
     question = await mergeHistory(question, history);
   }
   const answer = await answerQuestion(question);
-  console.log(`${colour.green}${answer}`);
+  console.log(`${colour.green}${answer}${colour.normal}`);
   history += `Q:${question}\nA:${answer}\n`;
 }

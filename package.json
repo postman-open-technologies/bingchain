@@ -14,6 +14,7 @@
   "dependencies": {
     "dotenv": "^16.0.3",
     "expr-eval": "^2.0.2",
+    "gpt-tokenizer": "^1.0.4",
     "turndown": "^7.1.2",
     "turndown-plugin-gfm": "^1.0.2",
     "yaml": "^2.2.2"
