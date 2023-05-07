@@ -17,7 +17,7 @@ const strikethrough = turndownPluginGfm.strikethrough
 
 const TOKEN_LIMIT = 3072;
 const RESPONSE_LIMIT = 512;
-const TEMPERATURE = process.env.temperature || 0.7;
+const TEMPERATURE = parseFloat(process.env.temperature) || 0.7;
 const token_cache = new Map();
 
 // Use the gfm, table and strikethrough plugins
@@ -210,10 +210,10 @@ const answerQuestion = async (question) => {
       const result = await tools[action].execute(actionInput);
       prompt += `Observation: ${result}\n`;
     } else {
-      let answer = response.match(/Final Answer: (.*)/)?.[1];
+      let answer = response.match(/Final Answer:(.*)/)?.[1].trim();
       if (answer) return answer;
-      answer = response.match(/Observation: (.*)/)?.[1];
-      return answer; // sometimes we don't get a "Final Answer"
+      answer = response.match(/Observation:(.*)/)?.[1].trim();
+      return answer||'No answer'; // sometimes we don't get a "Final Answer"
     }
   }
 };
