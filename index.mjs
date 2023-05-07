@@ -123,7 +123,14 @@ const tools = {
   calculator: {
     description:
       "Useful for getting the result of a math expression. The input to this tool should be a valid mathematical expression that could be executed by a simple calculator.",
-    execute: (input) => Parser.evaluate(input).toString(),
+    execute: (input) => {
+      let result = '';
+      try {
+        result = Parser.evaluate(input).toString();
+      }
+      catch (ex) {}
+      return result;
+    }
   },
   retrieve: {
     description:
