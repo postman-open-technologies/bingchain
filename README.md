@@ -1,6 +1,6 @@
 # 🕵️🔗 BingChain
 
-This is a fork of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~300 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search, URL retrieval, API plugin installation, API calls, and a calculator) in order to hold conversations and answer questions.
+This is a fork of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~350 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, and a scientific calculator) in order to hold conversations and answer questions.
 
 Here's an example:
 
@@ -42,7 +42,8 @@ How can I help? > what was the name of the first man on the moon?
 Neil Armstrong
 ~~~
 
+**Note**: to enable the Javascript sandbox, you must pass the option `--experimental-vm-modules` to Node.js.
+
 ## Future work planned
 
-* A new tool to allow `sandbox`ing of Javascript code
-
+* Ideas gratefully received.

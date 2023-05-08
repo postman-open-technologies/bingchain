@@ -3,10 +3,12 @@ env.config();
 
 import fs from "node:fs";
 import http from "node:http";
-import yaml from "yaml";
-import { Parser } from "expr-eval";
+import vm from "node:vm";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+
+import yaml from "yaml";
+import { Parser } from "expr-eval";
 import TurndownService from 'turndown';
 import turndownPluginGfm from 'turndown-plugin-gfm';
 import { isWithinTokenLimit } from 'gpt-tokenizer';
@@ -16,18 +18,22 @@ const gfm = turndownPluginGfm.gfm
 const tables = turndownPluginGfm.tables
 const strikethrough = turndownPluginGfm.strikethrough
 
-const TOKEN_LIMIT = 2048;
+const TOKEN_LIMIT = 2048; // there seems to be a 50/100 thing going on
 const RESPONSE_LIMIT = 512;
 const TEMPERATURE = parseFloat(process.env.temperature) || 0.7;
 const token_cache = new Map();
+const scriptResult = { chatResponse: '' };
+vm.createContext(scriptResult);
+
 let history = "";
 let apiServer = "";
 
 // Use the gfm, table and strikethrough plugins
 html2md.use([gfm, tables, strikethrough]);
-html2md.remove('style');
+html2md.remove('aside');
 html2md.remove('script');
-html2md.remove('table');
+html2md.remove('style');
+html2md.remove('table'); // this may be controversial
 
 const rl = readline.createInterface({ input, output });
 
@@ -40,15 +46,19 @@ const colour = (process.env.NODE_DISABLE_COLORS || !process.stdout.isTTY) ?
     { red: '\x1b[31m', yellow: '\x1b[33;1m', green: '\x1b[32m', blue: '\x1b[34m', normal: '\x1b[0m' };
 
 const truncate = (text) => {
+  let count = 0;
   while (!isWithinTokenLimit(history + '\n' + text, TOKEN_LIMIT - RESPONSE_LIMIT, token_cache)) {
-    process.stdout.write(`${colour.red}(Truncating)${colour.normal}`);
+    count++;
     text = text.substring(0,Math.round(text.length*0.9));
+  }
+  if (count > 0) {
+    output.write(`${colour.red}(Truncating)${colour.normal}`);
   }
   return text;
 };
 
 // fallback tool in case API key not specified
-const nop = async (question) => '';
+const nop = async (question) => 'No results.';
 
 // use Microsoft Bing to answer the question
 const bingSearch = async (question) =>
@@ -154,6 +164,28 @@ const reset = async () => {
   history = "";
 };
 
+async function linker(specifier, referencingModule) {
+  return true;
+}
+
+const script = async (source) => {
+  let defaultOutput = '';
+  const mod = new vm.SourceTextModule(source,
+      { identifier: 'temp', context: scriptResult });
+  mod.link(linker);
+  try {
+    await mod.evaluate();
+    const ns = mod.namespace();
+    if (ns.default && typeof ns.default === 'function') {
+      defaultOutput = ns.default();
+    }
+  }
+  catch (ex) {
+    console.warn(`${colour.red}${ex.message}${colour.normal}`);
+  }
+  return scriptResult.chatResponse||defaultOutput||'No result';
+};
+
 // tools that can be used to answer questions
 const tools = {
   search: {
@@ -191,37 +223,47 @@ const tools = {
     description: "A tool which simply resets the chat history to be blank. You must only call this when the chat history length exceeds half of your token limit.",
     execute: reset,
   },
+  script: {
+    description: "An ECMAScript/Javascript execution sandbox. Use this to evaluate Javascript programs. The input should be in the form of a self-contained Javascript module (esm), which has an IIFE (Immediately Invoked Function Expression), or a default export function. To return text, assign it to the pre-existing global variable chatResponse. Do not redefine the chatResponse variable. Do not attempt to break out of the sandbox.",
+    execute: script,
+  },
 };
+
 if (!process.env.BING_API_KEY) tools.search.execute = nop;
+if (!vm.sourceTextModule) tools.script.execute = nop;
 
 // use GPT-3.5 to complete a given prompts
-const completePrompt = async (prompt) =>
-  await fetch("https://api.openai.com/v1/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + process.env.OPENAI_API_KEY,
-    },
-    body: JSON.stringify({
-      model: "text-davinci-003",
-      prompt,
-      max_tokens: RESPONSE_LIMIT,
-      temperature: TEMPERATURE,
-      stream: false,
-      stop: ["Observation:"],
-    }),
-  })
-    .then((res) => res.json())
-    .then((res) => {
-      if (typeof res === 'string') return res;
-      if (!res.choices) return yaml.stringify(res);
-      return res.choices[0].text;
-    })
-    .then((res) => {
-      console.log(`${colour.red}${prompt}${colour.normal}`);
-      console.log(`${colour.blue}${res}${colour.normal}`);
-      return res;
+const completePrompt = async (prompt) => {
+  let res = { ok: false, status: 500 };
+  const dummy = "I took too long thinking about that.";
+  try {
+    let res = await fetch("https://api.openai.com/v1/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + process.env.OPENAI_API_KEY,
+      },
+      body: JSON.stringify({
+        model: "text-davinci-003",
+        prompt,
+        max_tokens: RESPONSE_LIMIT,
+        temperature: TEMPERATURE,
+        stream: false,
+        stop: ["Observation:"],
+     }),
     });
+    res = await res.json();
+    if (typeof res === 'string') return res;
+    if (!res.choices) return yaml.stringify(res);
+    console.log(`${colour.red}${prompt}${colour.normal}`);
+    console.log(`${colour.blue}${res.choices[0].text}${colour.normal}`);
+    return res.choices[0].text;
+  }
+  catch (ex) {
+    console.log(`${colour.red}${dummy} (${ex.message})${colour.normal}`);
+  }
+  return dummy;
+};
 
 const answerQuestion = async (question) => {
   // construct the prompt, with our question and the tools that the chain can use
