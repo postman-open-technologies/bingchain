@@ -59,7 +59,10 @@ const truncate = (text) => {
 };
 
 // fallback tool in case API key not specified
-const nop = async (question) => 'No results.';
+const nop = async (question) => {
+  console.log(`${colour.red}Stubbing out an action call!${colour.normal}`);
+  return 'No results.'
+};
 
 // use Microsoft Bing to answer the question
 const bingSearch = async (question) =>
@@ -112,7 +115,7 @@ const install = async (domain) => {
       catch (ex) {}
       if (res.ok) {
         const apiDef = await res.text();
-	try {
+	      try {
           const openApi = yaml.parse(apiDef);
           if (openApi && openApi.openapi && openApi.servers) {
             apiServer = openApi.servers[0].url;
@@ -121,12 +124,12 @@ const install = async (domain) => {
           question = pluginTemplate + '\n\n' + openApiYaml;
           console.log(`${colour.green}Successfully installed the ${domain} plugin and API.${colour.normal}`);
         }
-	catch (ex) {
-	  console.warn(`${colour.red}${ex.message}${colour.normal}`);
-	}
+	      catch (ex) {
+	        console.warn(`${colour.red}${ex.message}${colour.normal}`);
+	      }
       }
       else {
-	console.log(`${colour.red}Failed to fetch API definition!${colour.normal}`);
+	      console.log(`${colour.red}Failed to fetch API definition!${colour.normal}`);
       }
     }
   }
@@ -171,18 +174,26 @@ const reset = async () => {
   history = "";
 };
 
-async function linker(specifier, referencingModule) {
-  return true;
-}
 
 const script = async (source) => {
   let defaultOutput = '';
+  if (source.indexOf("```") >= 0) {
+    source = source.replace("```javascript", "```");
+    source = source.replace("```js", "```");
+    source = source.split("```")[1];
+  }
   const mod = new vm.SourceTextModule(source,
       { identifier: 'temp', context: scriptResult });
-  mod.link(linker);
+
+  async function linker(specifier, referencingModule) {
+    return mod;
+  }
+
+  await mod.link(linker);
   try {
+    console.log(`${colour.green}Evaluating script...${colour.normal}`);
     await mod.evaluate();
-    const ns = mod.namespace();
+    const ns = mod.namespace;
     if (ns.default && typeof ns.default === 'function') {
       defaultOutput = ns.default();
     }
@@ -190,7 +201,7 @@ const script = async (source) => {
   catch (ex) {
     console.warn(`${colour.red}${ex.message}${colour.normal}`);
   }
-  return scriptResult.chatResponse||defaultOutput||'No result';
+  return scriptResult.chatResponse||defaultOutput||'No results.';
 };
 
 // tools that can be used to answer questions
@@ -237,7 +248,7 @@ const tools = {
 };
 
 if (!process.env.BING_API_KEY) tools.search.execute = nop;
-if (!vm.sourceTextModule) tools.script.execute = nop;
+if (typeof vm.SourceTextModule === 'undefined') tools.script.execute = nop;
 
 // use GPT-3.5 to complete a given prompts
 const completePrompt = async (prompt) => {
@@ -307,7 +318,7 @@ const answerQuestion = async (question) => {
     const action = response.match(/Action: (.*)/)?.[1].trim().toLowerCase();
     if (action && tools[action]) {
       // execute the action specified by the LLMs
-      const actionInput = response.match(/Action Input: "?(.*)"?/)?.[1];
+      const actionInput = response.replace('Action Input: ', '').trim();
       const result = await tools[action].execute(actionInput);
       prompt += `Observation: ${result||'None'}\n`;
     } else {
