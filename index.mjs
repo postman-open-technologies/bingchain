@@ -40,6 +40,7 @@ const colour = (process.env.NODE_DISABLE_COLORS || !process.stdout.isTTY) ?
 
 const truncate = (text) => {
   while (!isWithinTokenLimit(history + '\n' + text, TOKEN_LIMIT - RESPONSE_LIMIT, token_cache)) {
+    process.stdout.write(`${colour.red}(Truncating)${colour.normal}`);
     text = text.substring(0,Math.round(text.length*0.9));
   }
   return text;
@@ -55,13 +56,16 @@ const bingSearch = async (question) =>
     .then((res) => res.json())
     .then(
       (res) => {
+        let results = 'Results:';
         // try to pull the answer from various components of the response
         if (res && res.webPages && res.webPages.value) {
-          return res.webPages.value[0].snippet
-	}
-	return '';
-      }
-    );
+          for (let value of res.webPages.value) {
+            results + `${value.name}:\n${value.snippet}\nFor further reading, retrieve ${value.url}`;
+          }
+          return results;
+	      }
+	      return '';
+      });
 
 const retrieveURL = async (url) =>
   await fetch(url)
@@ -141,6 +145,11 @@ const apicall = async (endpoint) => {
   return `${res.status} - ${http.STATUS_CODES[res.status]}`;
 };
 
+const reset = async () => {
+  console.log(`${colour.green}Resetting chat history.${colour.normal}`);
+  history = "";
+};
+
 // tools that can be used to answer questions
 const tools = {
   search: {
@@ -173,7 +182,11 @@ const tools = {
   apicall: {
     description: "A tool used to call a known API endpoint. Input should be in the form of an HTTP method in capital letters, followed by a colon (:) and the URL to call, made up of the relevant servers object entry and the selected operation's pathitem object key, having already replaced the templated path parameters. Headers should be provided after a # sign in the form of a JSON object of key/value pairs.",
    execute: apicall,
-  }
+  },
+  reset: {
+    description: "A tool which simply resets the chat history to be blank. You must only call this when the chat history length exceeds half of your token limit.",
+    execute: reset,
+  },
 };
 if (!process.env.BING_API_KEY) tools.search.execute = nop;
 
@@ -230,8 +243,10 @@ const answerQuestion = async (question) => {
       prompt += `Observation: ${result}\n`;
     } else {
       let answer = response.match(/Final Answer:(.*)/);
-      answer.shift(1);
-      answer = answer.join('\n').trim();
+      if (answer && answer.length) {
+        answer.shift(1);
+        answer = answer.join('\n').trim();
+      }
       if (answer) return answer;
       answer = response.match(/Observation:(.*)/)?.[1].trim();
       return answer||'No answer'; // sometimes we don't get a "Final Answer"
@@ -256,6 +271,9 @@ while (true) {
     questionLC = questionLC.split('the ').join('');
     questionLC = questionLC.split(' plugin').join('');
     question = await install(questionLC.trim());
+  }
+  if (questionLC === 'reset') {
+    reset();
   }
   if (history.length > 0) {
     question = await mergeHistory(question, history);
