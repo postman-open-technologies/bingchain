@@ -1,6 +1,6 @@
 # 🕵️🔗 BingChain
 
-This is a fork of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~350 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, and a scientific calculator) in order to hold conversations and answer questions.
+This is an evolution of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~350 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, and a scientific calculator) in order to hold conversations and answer questions.
 
 Here's an example:
 
@@ -15,7 +15,7 @@ Q: What time would an average human expect for solving?
 It takes the average person about three hours to solve a Rubik's cube for the first time.
 ~~~
 
-This is not intended to be a replacement for LangChain, instead it was built for fun and educational purposes. If you're interested in how LangChain, and similar tools work, this is a good starting point.
+This is not intended to be a replacement for LangChain, which has many composable elements, instead it was built to demonstrate the power of assembling a set of tools (such as API calling and Javascript execution). If you're interested in how LangChain, and similar tools work, this is a very good starting point.
 
 ## Running / developing
 
@@ -30,9 +30,13 @@ You'll need to have both an OpenAI and Bing API keys. These can be supplied to t
 ~~~
 OPENAI_API_KEY="..."
 BING_API_KEY="..."
+MODEL=gpt-4
+TOKEN_LIMIT=32768
 ~~~
 
-The clever part is the initial prompt, which is held in `prompt.txt`.
+Set the token limit to the advertised limit of the model you are using, so 32768 for `gpt-4`, 4096 for `text-davinci-003` and 2048 for `text-curie-001`.
+
+The clever part is the initial prompt, which is held in [`prompt.txt`](https://raw.githubusercontent.com/postman-open-technologies/bingchain/main/prompt.txt).
 
 You can now run the chain:
 
