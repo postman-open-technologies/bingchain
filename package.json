@@ -1,12 +1,12 @@
 {
   "name": "bingchain",
   "version": "1.0.0",
-  "description": "Langchain in ~110 lines of code",
-  "main": "index.js",
+  "description": "Langchain in ~300 lines of code",
+  "main": "index.mjs",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
+  "author": "Mike Ralphson",
   "engines": {
     "node": ">=18.0.0"
   },

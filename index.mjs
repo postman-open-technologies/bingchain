@@ -27,6 +27,7 @@ let apiServer = "";
 html2md.use([gfm, tables, strikethrough]);
 html2md.remove('style');
 html2md.remove('script');
+html2md.remove('table');
 
 const rl = readline.createInterface({ input, output });
 
@@ -67,7 +68,7 @@ const bingSearch = async (question) =>
 	      return '';
       });
 
-const retrieveURL = async (url) =>
+const retrieveURL = async (url) => {
   await fetch(url)
     .then((res) => res.text())
     .then((txt) => {
@@ -75,8 +76,11 @@ const retrieveURL = async (url) =>
       return text;
     })
     .catch((ex) => '');
+  };
 
 const install = async (domain) => {
+  domain = domain.replace('http://','');
+  domain = domain.replace('https://','');
   const pluginManifest = `https://${domain}/.well-known/ai-plugin.json`;
   let res = { ok: false, status: 404 };
   let plugin;
@@ -171,7 +175,7 @@ const tools = {
   },
   retrieve: {
     description:
-      "A URL retrieval tool. Useful for returning the plain text of a web site from its URL. Javascript is not supported. Input should be in the form of an absolute URL.",
+      "A URL retrieval tool. Useful for returning the plain text of a web site from its URL. Javascript is not supported. Input should be in the form of an absolute URL. If using Wikipedia, always use https://simple.wikipedia.org in preference to https://en.wikipedia.org",
     execute: retrieveURL,
   },
   install: {
@@ -240,7 +244,7 @@ const answerQuestion = async (question) => {
       // execute the action specified by the LLMs
       const actionInput = response.match(/Action Input: "?(.*)"?/)?.[1];
       const result = await tools[action].execute(actionInput);
-      prompt += `Observation: ${result}\n`;
+      prompt += `Observation: ${result||'None'}\n`;
     } else {
       let answer = response.match(/Final Answer:(.*)/);
       if (answer && answer.length) {
