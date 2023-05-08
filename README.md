@@ -38,6 +38,8 @@ Set the token limit to the advertised limit of the model you are using, so 32768
 
 The clever part is the initial prompt, which is held in [`prompt.txt`](https://raw.githubusercontent.com/postman-open-technologies/bingchain/main/prompt.txt).
 
+Example prompts and responses to show how the various built-in tools work can be found in the [`examples`](https://github.com/postman-open-technologies/bingchain/tree/main/examples) directory.
+
 You can now run the chain:
 
 ~~~
