@@ -12,6 +12,7 @@ import { Parser } from "expr-eval";
 import TurndownService from 'turndown';
 import turndownPluginGfm from 'turndown-plugin-gfm';
 import { isWithinTokenLimit } from 'gpt-tokenizer';
+import clipboard from 'clipboardy';
 
 const html2md = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', preformattedCode: true });
 const gfm = turndownPluginGfm.gfm
@@ -68,9 +69,14 @@ const nop = async (question) => {
 const bingSearch = async (question) =>
   await fetch(
     `https://api.bing.microsoft.com/v7.0/search?q=${escape(question)}`, { headers: {"Ocp-Apim-Subscription-Key": process.env.BING_API_KEY } })
-    .then((res) => res.json())
-    .then(
-      (res) => {
+    .then((res) => {
+      if (res.ok) return res.json()
+      else {
+        console.log(`${colour.red}${res.status} - ${http.STATUS_CODES[res.status]}${colour.normal}`);
+        return {};
+      }
+    })
+    .then((res) => {
         let results = 'Results:';
         // try to pull the answer from various components of the response
         if (res && res.webPages && res.webPages.value) {
@@ -89,7 +95,9 @@ const retrieveURL = async (url) => {
       let text = truncate(html2md.turndown(txt));
       return text;
     })
-    .catch((ex) => '');
+    .catch((ex) => {
+      console.log(`${colour.red}${ex.message}${colour.normal}`);
+    });
   };
 
 const install = async (domain) => {
@@ -134,14 +142,15 @@ const install = async (domain) => {
     }
   }
   else {
-    console.log(`${colour.red}${res.status}${colour.normal}`);
+    console.log(`${colour.red}${res.status} - ${http.STATUS_CODES[res.status]}${colour.normal}`);
   }
   return question;
 };
 
 const apicall = async (endpoint) => {
   const components = endpoint.split(':');
-  const method = components.shift(1).toLowerCase();
+  const method = components[0].toLowerCase();
+  components.shift();
   const remaining = components.join(':').trim();
   let path = remaining.split('#')[0];
   if (!path.startsWith('http')) {
@@ -155,12 +164,17 @@ const apicall = async (endpoint) => {
   catch (ex) {
     console.log(`${colour.red}Could not parse headers map JSON${colour.normal}`);
   }
+  if (!headers.Accept && !headers.accept) {
+    headers.accept = 'application/json';
+  }
   console.log('Using the',method,'method to call the',path,'endpoint');
   let res = { ok: false, status: 404 };
   try {
     res = await fetch(path,{ method, headers });
   }
-  catch (ex) {}
+  catch (ex) {
+    console.log(`${colour.red}${method} ${path} - ${ex.message}${colour.normal}`);
+  }
   if (res.ok) {
     console.log(`${colour.green}${res.status} - ${res.headers['content-type']||'No Content-Type specified'}.${colour.normal}`);
     const json = await res.json(); // TODO XML APIs
@@ -174,7 +188,6 @@ const reset = async () => {
   history = "";
 };
 
-
 const script = async (source) => {
   let defaultOutput = '';
   if (source.indexOf("```") >= 0) {
@@ -182,8 +195,15 @@ const script = async (source) => {
     source = source.replace("```js", "```");
     source = source.split("```")[1];
   }
-  const mod = new vm.SourceTextModule(source,
+  let mod;
+  try {
+    mod = new vm.SourceTextModule(source,
       { identifier: 'temp', context: scriptResult });
+  }
+  catch (ex) {
+    console.warn(`${colour.red}${ex.message} - ${source}${colour.normal}`);
+    return `Parsing your script threw an error: ${ex.message}`;
+  }
 
   async function linker(specifier, referencingModule) {
     return mod;
@@ -200,6 +220,7 @@ const script = async (source) => {
   }
   catch (ex) {
     console.warn(`${colour.red}${ex.message}${colour.normal}`);
+    return `Running your script threw an error: ${ex.message}`;
   }
   return scriptResult.chatResponse||defaultOutput||'No results.';
 };
@@ -278,14 +299,14 @@ const completePrompt = async (prompt) => {
       },
       body: JSON.stringify(body),
     });
-    if (!res.ok) console.log(`${colour.red}${res.status}${colour.normal}`);
+    if (!res.ok) console.log(`${colour.red}${res.status} - ${http.STATUS_CODES[res.status]}${colour.normal}`);
     res = await res.json();
     if (typeof res === 'string') return res;
     if (!res.choices) {
       console.log(`${colour.blue}${yaml.stringify(res)}${colour.normal}`);
       return yaml.stringify(res)||'No response';
     }
-    console.log(`${colour.red}${prompt}${colour.normal}`);
+    console.log(`${colour.yellow}${prompt}${colour.normal}`);
     if (res.choices && res.choices.length > 0 && res.choices[0].message) {
       console.log(`${colour.blue}${res.choices[0].message.content}${colour.normal}`);
       return res.choices[0].message.content;
@@ -315,20 +336,27 @@ const answerQuestion = async (question) => {
     // add this to the prompt
     prompt += response;
 
-    const action = response.match(/Action: (.*)/)?.[1].trim().toLowerCase();
-    if (action && tools[action]) {
-      // execute the action specified by the LLMs
-      const actionInput = response.replace('Action Input: ', '').trim();
-      const result = await tools[action].execute(actionInput);
-      prompt += `Observation: ${result||'None'}\n`;
-    } else {
-      let answer = response.match(/Final Answer:(.*)/);
-      if (answer && answer.length) {
-        answer.shift(1);
-        answer = answer.join('\n').trim();
+    if (response.indexOf('Action:') >= 0) {
+      const action = response.split('Action:').pop().split('\n')[0].toLowerCase().trim();
+      if (action && tools[action]) {
+        // execute the action specified by the LLMs
+        let ai = response.split('Action Input:').pop();
+        if (ai.indexOf('```') >= 0) {
+          ai = ai.split('```\n')[0].trim();
+        }
+        else {
+          ai = ai.split('\n')[0].trim();
+        }
+        const actionInput = ai;
+        const result = await tools[action].execute(actionInput);
+        prompt += `Observation: ${result||'None'}\n`;
       }
-      if (answer) return answer;
-      answer = response.match(/Observation:(.*)/)?.[1].trim();
+    } else {
+      if (response.indexOf('Answer:') >= 0) {
+        let answer = response.split('Answer:').pop();
+        if (answer) return answer;
+      }
+      let answer = response.split('Observation:').pop().trim();
       return answer||'No answer'; // sometimes we don't get a "Final Answer"
     }
   }
@@ -345,6 +373,7 @@ const mergeHistory = async (question, history) => {
 // main loop - answer the user's questions
 while (true) {
   let question = await rl.question(`${colour.red}How can I help? >${colour.yellow} `);
+  if (question) clipboard.writeSync(question);
   let questionLC = question.trim().toLowerCase();
   if (questionLC.startsWith('install ') && questionLC.indexOf(' plugin') >= 0) {
     questionLC = questionLC.split('install ').join('');

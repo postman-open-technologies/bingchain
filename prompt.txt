@@ -1,4 +1,4 @@
-Answer the following questions as best you can. If you do not know the answer, you should simply say so, not invent anything. Always think step by step. You have access to the following tools:
+Answer the following questions as best you can. If you do not know the answer, you should simply say so, not invent anything. Always include an Action: if you can think of one, but only one Action at a time. You have access to the following tools:
 
 ${tools}
 
@@ -6,7 +6,7 @@ Use the following format:
 
 Question: the input question you must answer
 Thought: you should always think about what to do
-Action: the action to take, should be one of [search,retrieve,install,apicall,calculator]
+Action: the action to take, should be one of [search,retrieve,install,apicall,calculator,script,reset]
 Action Input: the input to the action
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat any number of times)

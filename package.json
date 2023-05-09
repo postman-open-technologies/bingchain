@@ -12,6 +12,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "clipboardy": "^3.0.0",
     "dotenv": "^16.0.3",
     "expr-eval": "^2.0.2",
     "gpt-tokenizer": "^1.0.4",
