@@ -13,6 +13,9 @@ import TurndownService from 'turndown';
 import turndownPluginGfm from 'turndown-plugin-gfm';
 import { isWithinTokenLimit } from 'gpt-tokenizer';
 import clipboard from 'clipboardy';
+import metaFetcher from 'meta-fetcher';
+import terminalImage from 'terminal-image';
+import { svg2png, initialize } from 'svg2png-wasm';
 
 const html2md = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', preformattedCode: true });
 const gfm = turndownPluginGfm.gfm
@@ -27,6 +30,10 @@ const stream = true;
 const token_cache = new Map();
 const scriptResult = { chatResponse: '' };
 vm.createContext(scriptResult);
+
+await initialize(
+  fs.readFileSync('./node_modules/svg2png-wasm/svg2png_wasm_bg.wasm'),
+);
 
 let history = "";
 let completion = "";
@@ -76,19 +83,21 @@ async function fetchStream(url, options) {
             return;
           }
           let json;
+          let hoist;
           if (value) try {
             const chunks = `${Buffer.from(value).toString()}`.split('\n');
-            //json = yaml.parse(`${Buffer.from(value).toString()}`.split('\n'));
             for (let chunk of chunks) {
               if (chunk) {
-                const json = yaml.parse((chunk||'{}').replace('data: ', ''));
-                const text = json.choices[0].delta.content;
-                if (text) process.stdout.write(text);
+                hoist = chunk.trim();
+                const json = yaml.parse((chunk||'{}').replace('data: {', '{'));
+                let text = json.choices?.[0].delta.content;
+                if (!text) text = '';
+                process.stdout.write(text);
                 completion += text;
               }
             }
           } catch (ex) {
-            console.log(ex.message);
+            console.log(ex.message, hoist);
           }
           controller.enqueue(value);
           push();
@@ -143,6 +152,45 @@ const retrieveURL = async (url) => {
     });
   };
 
+const retrieveMetadata = async (url) => {
+  try {
+    const res = await metaFetcher(url);
+    return yaml.stringify(res);
+  }
+  catch (ex) {
+    console.log(`${colour.red}${ex.message}${colour.normal}`);
+  }
+  return 'No metadata found.'
+};
+
+const retrieveImage = async (url) => {
+  try {
+    const res = await fetch(url, { headers: { "Accept": "image/*" } });
+    if (res.ok) {
+      let body;
+      if (url.indexOf('.svg') >= 0) {
+        const svg = await res.text();
+        body = await svg2png(svg);
+      }
+      else {
+        const ab = await res.arrayBuffer();
+        if (ab) {
+          body = Buffer.from(ab);
+        }
+      }
+      console.log(await terminalImage.buffer(body));
+      return 'Image successfully retrieved and displayed.'
+    }
+    else {
+      console.log(`${colour.red}${res.status} - ${http.STATUS_CODES[res.status]}${colour.normal}`);
+      return 'No image found.'
+    }
+  }
+  catch (ex) {
+    console.log(`${colour.red}${ex.message}${colour.normal}`);
+  }
+};
+
 const install = async (domain) => {
   domain = domain.replace('http://','');
   domain = domain.replace('https://','');
@@ -170,6 +218,7 @@ const install = async (domain) => {
           const openApi = yaml.parse(apiDef);
           if (openApi && openApi.openapi && openApi.servers) {
             apiServer = openApi.servers[0].url;
+            // TODO substitute all the variable default values
           }
           const openApiYaml = yaml.stringify(openApi);
           question = pluginTemplate + '\n\n' + openApiYaml;
@@ -210,7 +259,7 @@ const apicall = async (endpoint) => {
   if (!headers.Accept && !headers.accept) {
     headers.accept = 'application/json';
   }
-  headers['User-Agent'] = 'postman-open-technologies/BingChain/1.0.1';
+  headers['User-Agent'] = 'postman-open-technologies/BingChain/1.1.0';
   console.log('Using the',method,'method to call the',path,'endpoint');
   let res = { ok: false, status: 404 };
   try {
@@ -234,11 +283,6 @@ const reset = async () => {
 
 const script = async (source) => {
   let defaultOutput = '';
-  if (source.indexOf("```") >= 0) {
-    source = source.replace("```javascript", "```");
-    source = source.replace("```js", "```");
-    source = source.split("```")[1];
-  }
   let mod;
   try {
     mod = new vm.SourceTextModule(source,
@@ -293,6 +337,15 @@ const tools = {
       "A URL retrieval tool. Useful for returning the plain text of a web site from its URL. Javascript is not supported. Input should be in the form of an absolute URL. If using Wikipedia, always use https://simple.wikipedia.org in preference to https://en.wikipedia.org",
     execute: retrieveURL,
   },
+  metadata: {
+    description:
+      "A tool used to retrieve metadata from a web page, including videos. Input should be in the form of a URL. The response will be in JSON format.",
+    execute: retrieveMetadata,
+  },
+  image: {
+    description: "A tool which allows you to retrieve and really display images from a web page in a text-based terminal. Prefer PNG and JPEG images. Input should be in the form of a URL.",
+    execute: retrieveImage,
+  },
   install: {
     description:
       "A tool used to install API plugins. Input should be a bare domain name without a scheme/protocol or path.",
@@ -307,7 +360,7 @@ const tools = {
     execute: reset,
   },
   script: {
-    description: "An ECMAScript/Javascript execution sandbox. Use this to evaluate Javascript programs. The input should be in the form of a self-contained Javascript module (esm), which has an IIFE (Immediately Invoked Function Expression), or a default export function. To return text, assign it to the pre-existing global variable chatResponse. Do not redefine the chatResponse variable. Do not attempt to break out of the sandbox.",
+    description: "An ECMAScript/Javascript execution sandbox. Use this to evaluate Javascript programs. You do not need to use this tool just to have output displayed. The input should be in the form of a self-contained Javascript module (esm), which has an IIFE (Immediately Invoked Function Expression), or a default export function. To return text, assign it to the pre-existing global variable chatResponse. Do not redefine the chatResponse variable. Do not attempt to break out of the sandbox.",
     execute: script,
   },
 };
@@ -327,7 +380,7 @@ const completePrompt = async (prompt) => {
     user: 'BingChain',
     frequency_penalty: 0.5,
     n: 1,
-    //stop: ["Observation:"],
+    stop: ["Observation:", "Question:"],
   };
   if (MODEL.startsWith('text')) {
     body.prompt = prompt;
@@ -383,20 +436,69 @@ const answerQuestion = async (question) => {
     // add this to the prompt
     prompt += response;
 
+    const pngs = response.matchAll(/(https:\/\/.*\.png)/gi);
+    for (const png of pngs) {
+      try {
+        const res = await fetch(png[0], { headers: { "Accept": "image/png" } });
+        const ab = await res.arrayBuffer();
+        const body = Buffer.from(ab);
+        console.log(await terminalImage.buffer(body));
+      }
+      catch (ex) {
+        //console.log(`${colour.red}${ex.message}${colour.normal}`);
+      }
+    }
+
+    const jpegs = response.matchAll(/(https:\/\/.*\.jpe?g)/gi);
+    for (const jpeg of jpegs) {
+      try {
+        const res = await fetch(jpeg[0], { headers: { "Accept": "image/jpeg" } });
+        const ab = await res.arrayBuffer();
+        const body = Buffer.from(ab);
+        console.log(await terminalImage.buffer(body));
+      }
+      catch (ex) {
+        //console.log(`${colour.red}${ex.message}${colour.normal}`);
+      }
+    }
+
+    const svgs = response.matchAll(/(https:\/\/.*\.svg)/gi);
+    for (const svg of svgs) {
+      try {
+        const res = await fetch(jpeg[0], { headers: { "Accept": "image/jpeg" } });
+        const data = await res.text();
+        const png = await svg2png(data);
+        console.log(await terminalImage.buffer(png));
+      }
+      catch (ex) {
+        //console.log(`${colour.red}${ex.message}${colour.normal}`);
+      }
+    }
+
     if (response.indexOf('Action:') >= 0) {
       const action = response.split('Action:').pop().split('\n')[0].toLowerCase().trim();
       if (action && tools[action]) {
         // execute the action specified by the LLMs
-        let ai = response.split('Action Input:').pop();
-        if (ai.indexOf('```') >= 0) {
-          ai = ai.split('```\n')[0].trim();
+        let actionInput = response.split('Action Input:').pop().trim();
+        if (actionInput.indexOf("```") >= 0) {
+          actionInput = actionInput.replace("```javascript", "```");
+          actionInput = actionInput.replace("```js", "```");
+          actionInput = actionInput.split("```")[1];
+        }
+        else if (actionInput.indexOf(')()') >= 0) {
+          actionInput = actionInput.split(')()')[0]+')()'.trim();
+        }
+        else if (actionInput.indexOf('```') >= 0) {
+          actionInput = actionInput.split('```\n')[0].trim();
         }
         else {
-          ai = ai.split('\n')[0].trim();
+          actionInput = actionInput.split('\n')[0].trim();
         }
-        const actionInput = ai;
-        const result = await tools[action].execute(actionInput);
-        prompt += `Observation: ${result||'None'}\n`;
+        if (actionInput) {
+          console.log(colour.blue+"\nCalling", action, "with", actionInput, colour.normal);
+          const result = await tools[action].execute(actionInput);
+          prompt += `Observation: ${result||'None'}\n`;
+        }
       }
     } else {
       if (response.indexOf('Answer:') >= 0) {
