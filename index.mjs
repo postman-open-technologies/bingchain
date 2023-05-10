@@ -23,11 +23,13 @@ const TOKEN_LIMIT = (parseInt(process.env.TOKEN_LIMIT,10)/2.0)||2048; // TODO
 const MODEL = process.env.MODEL || 'text-davinci-003';
 const RESPONSE_LIMIT = 512;
 const TEMPERATURE = parseFloat(process.env.temperature) || 0.7;
+const stream = true;
 const token_cache = new Map();
 const scriptResult = { chatResponse: '' };
 vm.createContext(scriptResult);
 
 let history = "";
+let completion = "";
 let apiServer = "";
 
 // Use the gfm, table and strikethrough plugins
@@ -58,6 +60,47 @@ const truncate = (text) => {
   }
   return text;
 };
+
+/*This code defines an `async` function called `fetchStream` that uses `await` to simplify the code. The function returns the response body as text. You can call this function with the URL you want to fetch, and then log the result to the console.*/
+
+async function fetchStream(url, options) {
+  completion = "";
+  const response = await fetch(url, options);
+  const reader = response.body.getReader();
+  const stream = new ReadableStream({
+    start(controller) {
+      function push() {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            controller.close();
+            return;
+          }
+          let json;
+          if (value) try {
+            const chunks = `${Buffer.from(value).toString()}`.split('\n');
+            //json = yaml.parse(`${Buffer.from(value).toString()}`.split('\n'));
+            for (let chunk of chunks) {
+              if (chunk) {
+                const json = yaml.parse((chunk||'{}').replace('data: ', ''));
+                const text = json.choices[0].delta.content;
+                if (text) process.stdout.write(text);
+                completion += text;
+              }
+            }
+          } catch (ex) {
+            console.log(ex.message);
+          }
+          controller.enqueue(value);
+          push();
+        });
+      }
+      push();
+    }
+  });
+  const newResponse = new Response(stream);
+  const text = await newResponse.text();
+  return text;
+}
 
 // fallback tool in case API key not specified
 const nop = async (question) => {
@@ -142,7 +185,7 @@ const install = async (domain) => {
     }
   }
   else {
-    console.log(`${colour.red}${res.status} - ${http.STATUS_CODES[res.status]}${colour.normal}`);
+    if (!stream) console.log(`${colour.red}${res.status} - ${http.STATUS_CODES[res.status]}${colour.normal}`);
   }
   return question;
 };
@@ -167,6 +210,7 @@ const apicall = async (endpoint) => {
   if (!headers.Accept && !headers.accept) {
     headers.accept = 'application/json';
   }
+  headers['User-Agent'] = 'postman-open-technologies/BingChain/1.0.1';
   console.log('Using the',method,'method to call the',path,'endpoint');
   let res = { ok: false, status: 404 };
   try {
@@ -279,9 +323,11 @@ const completePrompt = async (prompt) => {
     model: MODEL,
     max_tokens: RESPONSE_LIMIT,
     temperature: TEMPERATURE,
-    top_p: 1,
-    stream: false,
-    stop: ["Observation:"],
+    stream,
+    user: 'BingChain',
+    frequency_penalty: 0.5,
+    n: 1,
+    //stop: ["Observation:"],
   };
   if (MODEL.startsWith('text')) {
     body.prompt = prompt;
@@ -291,7 +337,9 @@ const completePrompt = async (prompt) => {
   }
 
   try {
-    let res = await fetch(`https://api.openai.com/v1/${MODEL.startsWith('text') ? '' : 'chat/'}completions`, {
+    const url = `https://api.openai.com/v1/${MODEL.startsWith('text') ? '' : 'chat/'}completions`;
+    process.stdout.write(colour.green);
+    let res = await fetchStream(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -299,9 +347,8 @@ const completePrompt = async (prompt) => {
       },
       body: JSON.stringify(body),
     });
-    if (!res.ok) console.log(`${colour.red}${res.status} - ${http.STATUS_CODES[res.status]}${colour.normal}`);
-    res = await res.json();
-    if (typeof res === 'string') return res;
+    return completion;
+    //if (!res.ok) console.log(`${colour.red}${res.status} - ${http.STATUS_CODES[res.status]}${colour.normal}`);
     if (!res.choices) {
       console.log(`${colour.blue}${yaml.stringify(res)}${colour.normal}`);
       return yaml.stringify(res)||'No response';
@@ -315,7 +362,7 @@ const completePrompt = async (prompt) => {
     return res.choices[0].text;
   }
   catch (ex) {
-    console.log(`${colour.red}${dummy} (${ex.message})${colour.normal}`);
+    console.log(`${colour.red}(${ex.message})${colour.normal}`);
   }
   return dummy;
 };
