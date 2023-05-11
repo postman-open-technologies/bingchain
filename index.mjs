@@ -3,6 +3,7 @@ env.config();
 
 import fs from "node:fs";
 import http from "node:http";
+import path from "node:path";
 import vm from "node:vm";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -16,11 +17,19 @@ import clipboard from 'clipboardy';
 import metaFetcher from 'meta-fetcher';
 import terminalImage from 'terminal-image';
 import { svg2png, initialize } from 'svg2png-wasm';
+import jsFiddle from 'jsfiddle';
+import { v4 as uuidv4 } from 'uuid';
+import Koa from 'koa';
+import serve from 'koa-static';
+import Router from 'koa-router';
+
+import open from 'open';
 
 const html2md = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', preformattedCode: true });
 const gfm = turndownPluginGfm.gfm
 const tables = turndownPluginGfm.tables
 const strikethrough = turndownPluginGfm.strikethrough
+const router = new Router();
 
 const TOKEN_LIMIT = (parseInt(process.env.TOKEN_LIMIT,10)/2.0)||2048; // TODO
 const MODEL = process.env.MODEL || 'text-davinci-003';
@@ -35,10 +44,22 @@ await initialize(
   fs.readFileSync('./node_modules/svg2png-wasm/svg2png_wasm_bg.wasm'),
 );
 
-let history = "";
 let completion = "";
 let apiServer = "";
+let fiddleSrc = "";
 
+const app = new Koa();
+app.use(serve('.'));
+router.get('/', '/', (ctx) => {
+  ctx.body = fiddleSrc;
+});
+
+app
+  .use(router.routes())
+  .use(router.allowedMethods());
+app.listen(1337);
+
+let history = "";
 // Use the gfm, table and strikethrough plugins
 html2md.use([gfm, tables, strikethrough]);
 html2md.remove('aside');
@@ -53,8 +74,9 @@ const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
 const pluginTemplate = fs.readFileSync("./plugin.txt", "utf8");
 
 const colour = (process.env.NODE_DISABLE_COLORS || !process.stdout.isTTY) ?
-    { red: '', yellow: '', green: '', blue: '', normal: '' } :
-    { red: '\x1b[31m', yellow: '\x1b[33;1m', green: '\x1b[32m', blue: '\x1b[34m', normal: '\x1b[0m' };
+    { red: '', yellow: '', green: '', blue: '', normal: '', magenta: '', grey: '', inverse: '' } :
+    { red: '\x1b[31m', yellow: '\x1b[33;1m', green: '\x1b[32m', blue: '\x1b[34m', magenta: '\x1b[35m', grey: '\x1b[90m', cyan: '\x1b[96m',
+      inverse: '\x1b[7m', normal: '\x1b[27m\x1b[0m' };
 
 const truncate = (text) => {
   let count = 0;
@@ -63,7 +85,7 @@ const truncate = (text) => {
     text = text.substring(0,Math.round(text.length*0.9));
   }
   if (count > 0) {
-    output.write(`${colour.red}(Truncating)${colour.normal}`);
+    output.write(`${colour.magenta}(Truncating)${colour.normal}`);
   }
   return text;
 };
@@ -89,9 +111,8 @@ async function fetchStream(url, options) {
             for (let chunk of chunks) {
               if (chunk) {
                 hoist = chunk.trim();
-                const json = yaml.parse((chunk||'{}').replace('data: {', '{'));
-                let text = json.choices?.[0].delta.content;
-                if (!text) text = '';
+                const json = yaml.parse((chunk||'{}').replace('data: {', '{')).choices?.[0];
+                let text = (json && json.delta ? json.delta.content : json?.text) || '';
                 process.stdout.write(text);
                 completion += text;
               }
@@ -113,7 +134,7 @@ async function fetchStream(url, options) {
 
 // fallback tool in case API key not specified
 const nop = async (question) => {
-  console.log(`${colour.red}Stubbing out an action call!${colour.normal}`);
+  console.log(`${colour.red}Stubbing out an action call (no API key or access to vm.modules)!${colour.normal}`);
   return 'No results.'
 };
 
@@ -141,10 +162,17 @@ const bingSearch = async (question) =>
       });
 
 const retrieveURL = async (url) => {
+  if (url.startsWith('"')) {
+    url = url.replace(/\\"/g, '');
+  }
+  if (url.startsWith("'")) {
+    url = url.replace(/\\'/g, '');
+  }
   await fetch(url)
     .then((res) => res.text())
     .then((txt) => {
       let text = truncate(html2md.turndown(txt));
+      console.log(`${colour.cyan}${text}${colour.normal}`);
       return text;
     })
     .catch((ex) => {
@@ -277,12 +305,13 @@ const apicall = async (endpoint) => {
 };
 
 const reset = async () => {
-  console.log(`${colour.green}Resetting chat history.${colour.normal}`);
+  console.log(`${colour.cyan}Resetting chat history.${colour.normal}`);
   history = "";
 };
 
 const script = async (source) => {
-  let defaultOutput = '';
+  let functionOutput = '';
+  scriptResult.chatResponse = '';
   let mod;
   try {
     mod = new vm.SourceTextModule(source,
@@ -297,21 +326,66 @@ const script = async (source) => {
     return mod;
   }
 
-  await mod.link(linker);
   try {
+    await mod.link(linker);
     console.log(`${colour.green}Evaluating script...${colour.normal}`);
-    await mod.evaluate();
+    const ok = await mod.evaluate();
+    if (ok) console.log(`${colour.green}Result: ${ok}${colour.normal}`);
     const ns = mod.namespace;
     if (ns.default && typeof ns.default === 'function') {
-      defaultOutput = ns.default();
+      functionOutput = ns.default();
     }
   }
   catch (ex) {
     console.warn(`${colour.red}${ex.message}${colour.normal}`);
     return `Running your script threw an error: ${ex.message}`;
   }
-  return scriptResult.chatResponse||defaultOutput||'No results.';
+  if (scriptResult.chatResponse) {
+    console.log(`${colour.grey}${scriptResult.chatResponse}${colour.normal}`);
+    return scriptResult.chatResponse;
+  }
+  if (functionOutput) {
+    console.log(`${colour.grey}${functionResult}${colour.normal}`);
+    return functionOutput;
+  }
+  console.log(`${colour.red}Script produced no results.${colour.normal}`);
+  return 'No results.';
 };
+
+const savecode = async (input) => {
+  const slug = `./BingChain-${uuidv4()}`;
+  jsFiddle.saveFiddle({ title: slug, js: input, html: '', css: '' }, (err, body) => {
+    if (err) console.warn(`${colour.red}${err.message}${colour.normal}`)
+    else {
+      fiddleSrc = body.replace('<h3>Framework <script> attribute</h3>','<h3>Framework Vue</h3>');
+      fiddleSrc = fiddleSrc.replaceAll('<\\/', '</');
+      fiddleSrc = fiddleSrc.replaceAll('\\n', '<b>');
+      fiddleSrc = fiddleSrc.replaceAll(/\/js\/Groups.js.*\"/gi, 'lib/Groups.js"');
+      fiddleSrc = fiddleSrc.replaceAll(/\/css\/dist-editor-dark.css.*\"/gi, 'css/dist-editor-dark.css"');
+      fiddleSrc = fiddleSrc.replaceAll(/\/js\/_dist-editor.js.*\"/gi, 'js/_dist-editor.js"');
+      open(`http://localhost:1337`);
+    }
+  });
+}
+
+const savetext = async (input) => {
+  const slug = `./BingChain-${uuidv4()}`;
+  if (!input.startsWith('<')) {
+    input = `<html><div>${input}</div>`;
+  }
+  jsFiddle.saveFiddle({ title: slug, html: input, js: '', css: '' }, (err, body) => {
+    if (err) console.warn(`${colour.red}${err.message}${colour.normal}`)
+    else {
+      fiddleSrc = body.replace('<h3>Framework <script> attribute</h3>','<h3>Framework Vue</h3>');
+      fiddleSrc = fiddleSrc.replaceAll('<\\/', '</');
+      fiddleSrc = fiddleSrc.replaceAll('\\n', '<b>');
+      fiddleSrc = fiddleSrc.replaceAll(/\/js\/Groups.js.*\"/gi, 'lib/Groups.js"');
+      fiddleSrc = fiddleSrc.replaceAll(/\/css\/dist-editor-dark.css.*\"/gi, 'css/dist-editor-dark.css"');
+      fiddleSrc = fiddleSrc.replaceAll(/\/js\/_dist-editor.js.*\"/gi, 'js/_dist-editor.js"');
+      open(`http://localhost:1337`);
+    }
+  });
+}
 
 // tools that can be used to answer questions
 const tools = {
@@ -363,6 +437,18 @@ const tools = {
     description: "An ECMAScript/Javascript execution sandbox. Use this to evaluate Javascript programs. You do not need to use this tool just to have output displayed. The input should be in the form of a self-contained Javascript module (esm), which has an IIFE (Immediately Invoked Function Expression), or a default export function. To return text, assign it to the pre-existing global variable chatResponse. Do not redefine the chatResponse variable. Do not attempt to break out of the sandbox.",
     execute: script,
   },
+  savecode: {
+    description: "A tool used to save a javascript code and open it in a browser. Input should be in the form of the javscript to save in plain text.",
+    execute: savecode,
+  },
+  savehtml: {
+    description: "A tool used to save a html text and open it in a browser. Input should be in the form of the html to save in plain text.",
+    execute: savetext,
+  },
+  savetext: {
+    description: "A tool used to save a some text and open it in a browser. Input should be in the form of the text to save.",
+    execute: savetext,
+  }
 };
 
 if (!process.env.BING_API_KEY) tools.search.execute = nop;
@@ -391,7 +477,7 @@ const completePrompt = async (prompt) => {
 
   try {
     const url = `https://api.openai.com/v1/${MODEL.startsWith('text') ? '' : 'chat/'}completions`;
-    process.stdout.write(colour.green);
+    process.stdout.write(colour.grey);
     let res = await fetchStream(url, {
       method: "POST",
       headers: {
@@ -400,19 +486,13 @@ const completePrompt = async (prompt) => {
       },
       body: JSON.stringify(body),
     });
+    if (completion.startsWith(' ')) {
+      completion = completion.slice(1);
+    }
+    if (!completion.endsWith('\n\n')) {
+      completion += '\n';
+    }
     return completion;
-    //if (!res.ok) console.log(`${colour.red}${res.status} - ${http.STATUS_CODES[res.status]}${colour.normal}`);
-    if (!res.choices) {
-      console.log(`${colour.blue}${yaml.stringify(res)}${colour.normal}`);
-      return yaml.stringify(res)||'No response';
-    }
-    console.log(`${colour.yellow}${prompt}${colour.normal}`);
-    if (res.choices && res.choices.length > 0 && res.choices[0].message) {
-      console.log(`${colour.blue}${res.choices[0].message.content}${colour.normal}`);
-      return res.choices[0].message.content;
-    }
-    console.log(`${colour.blue}${res.choices[0].text}${colour.normal}`);
-    return res.choices[0].text;
   }
   catch (ex) {
     console.log(`${colour.red}(${ex.message})${colour.normal}`);
@@ -492,7 +572,7 @@ const answerQuestion = async (question) => {
           actionInput = actionInput.split('```\n')[0].trim();
         }
         else {
-          actionInput = actionInput.split('\n')[0].trim();
+          actionInput = actionInput.split('\n\n')[0].trim();
         }
         if (actionInput) {
           console.log(colour.blue+"\nCalling", action, "with", actionInput, colour.normal);
@@ -521,7 +601,7 @@ const mergeHistory = async (question, history) => {
 
 // main loop - answer the user's questions
 while (true) {
-  let question = await rl.question(`${colour.red}How can I help? >${colour.yellow} `);
+  let question = await rl.question(`${colour.red}How can I help? >${colour.grey} `);
   if (question) clipboard.writeSync(question);
   let questionLC = question.trim().toLowerCase();
   if (questionLC.startsWith('install ') && questionLC.indexOf(' plugin') >= 0) {
@@ -537,6 +617,6 @@ while (true) {
     question = await mergeHistory(question, history);
   }
   const answer = await answerQuestion(question);
-  console.log(`${colour.green}${answer}${colour.normal}`);
+  console.log(`${colour.green}\n${answer}${colour.normal}`);
   history += `Q:${question}\nA:${answer}\n`;
 }
