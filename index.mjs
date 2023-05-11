@@ -40,9 +40,6 @@ const token_cache = new Map();
 const scriptResult = { chatResponse: '' };
 vm.createContext(scriptResult);
 
-await initialize(
-  fs.readFileSync('./node_modules/svg2png-wasm/svg2png_wasm_bg.wasm'),
-);
 
 let completion = "";
 let apiServer = "";
@@ -154,11 +151,11 @@ const bingSearch = async (question) =>
         // try to pull the answer from various components of the response
         if (res && res.webPages && res.webPages.value) {
           for (let value of res.webPages.value) {
-            results + `${value.name}:\n${value.snippet}\nFor further reading, retrieve ${value.url}`;
+            results += `${value.name}:\n${value.snippet}\nFor further reading, retrieve ${value.url}`;
           }
           return results;
-	      }
-	      return '';
+        }
+        return '';
       });
 
 const retrieveURL = async (url) => {
@@ -242,7 +239,7 @@ const install = async (domain) => {
       catch (ex) {}
       if (res.ok) {
         const apiDef = await res.text();
-	      try {
+        try {
           const openApi = yaml.parse(apiDef);
           if (openApi && openApi.openapi && openApi.servers) {
             apiServer = openApi.servers[0].url;
@@ -252,12 +249,12 @@ const install = async (domain) => {
           question = pluginTemplate + '\n\n' + openApiYaml;
           console.log(`${colour.green}Successfully installed the ${domain} plugin and API.${colour.normal}`);
         }
-	      catch (ex) {
-	        console.warn(`${colour.red}${ex.message}${colour.normal}`);
-	      }
+        catch (ex) {
+          console.warn(`${colour.red}${ex.message}${colour.normal}`);
+        }
       }
       else {
-	      console.log(`${colour.red}Failed to fetch API definition!${colour.normal}`);
+        console.log(`${colour.red}Failed to fetch API definition!${colour.normal}`);
       }
     }
   }
@@ -345,7 +342,7 @@ const script = async (source) => {
     return scriptResult.chatResponse;
   }
   if (functionOutput) {
-    console.log(`${colour.grey}${functionResult}${colour.normal}`);
+    console.log(`${colour.grey}${functionOutput}${colour.normal}`);
     return functionOutput;
   }
   console.log(`${colour.red}Script produced no results.${colour.normal}`);
@@ -392,7 +389,7 @@ const tools = {
   search: {
     description:
       "A search engine. Useful for when you need to answer questions about current events or retrieve in-depth answers. Input should be a search query.",
-    execute: bingSearch,
+    execute: bingSearch
   },
   calculator: {
     description:
@@ -409,45 +406,45 @@ const tools = {
   retrieve: {
     description:
       "A URL retrieval tool. Useful for returning the plain text of a web site from its URL. Javascript is not supported. Input should be in the form of an absolute URL. If using Wikipedia, always use https://simple.wikipedia.org in preference to https://en.wikipedia.org",
-    execute: retrieveURL,
+    execute: retrieveURL
   },
   metadata: {
     description:
       "A tool used to retrieve metadata from a web page, including videos. Input should be in the form of a URL. The response will be in JSON format.",
-    execute: retrieveMetadata,
+    execute: retrieveMetadata
   },
   image: {
     description: "A tool which allows you to retrieve and really display images from a web page in a text-based terminal. Prefer PNG and JPEG images. Input should be in the form of a URL.",
-    execute: retrieveImage,
+    execute: retrieveImage
   },
   install: {
     description:
       "A tool used to install API plugins. Input should be a bare domain name without a scheme/protocol or path.",
-    execute: install,
+    execute: install
   },
   apicall: {
     description: "A tool used to call a known API endpoint. Input should be in the form of an HTTP method in capital letters, followed by a colon (:) and the URL to call, made up of the relevant servers object entry and the selected operation's pathitem object key, having already replaced the templated path parameters. Headers should be provided after a # sign in the form of a JSON object of key/value pairs.",
-   execute: apicall,
+   execute: apicall
   },
   reset: {
     description: "A tool which simply resets the chat history to be blank. You must only call this when the chat history length exceeds half of your token limit.",
-    execute: reset,
+    execute: reset
   },
   script: {
     description: "An ECMAScript/Javascript execution sandbox. Use this to evaluate Javascript programs. You do not need to use this tool just to have output displayed. The input should be in the form of a self-contained Javascript module (esm), which has an IIFE (Immediately Invoked Function Expression), or a default export function. To return text, assign it to the pre-existing global variable chatResponse. Do not redefine the chatResponse variable. Do not attempt to break out of the sandbox.",
-    execute: script,
+    execute: script
   },
   savecode: {
     description: "A tool used to save a javascript code and open it in a browser. Input should be in the form of the javscript to save in plain text.",
-    execute: savecode,
+    execute: savecode
   },
   savehtml: {
     description: "A tool used to save a html text and open it in a browser. Input should be in the form of the html to save in plain text.",
-    execute: savetext,
+    execute: savetext
   },
   savetext: {
     description: "A tool used to save a some text and open it in a browser. Input should be in the form of the text to save.",
-    execute: savetext,
+    execute: savetext
   }
 };
 
@@ -466,7 +463,7 @@ const completePrompt = async (prompt) => {
     user: 'BingChain',
     frequency_penalty: 0.5,
     n: 1,
-    stop: ["Observation:", "Question:"],
+    stop: ["Observation:", "Question:"]
   };
   if (MODEL.startsWith('text')) {
     body.prompt = prompt;
@@ -482,9 +479,9 @@ const completePrompt = async (prompt) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: "Bearer " + process.env.OPENAI_API_KEY,
+        Authorization: "Bearer " + process.env.OPENAI_API_KEY
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body)
     });
     if (completion.startsWith(' ')) {
       completion = completion.slice(1);
@@ -545,7 +542,7 @@ const answerQuestion = async (question) => {
     const svgs = response.matchAll(/(https:\/\/.*\.svg)/gi);
     for (const svg of svgs) {
       try {
-        const res = await fetch(jpeg[0], { headers: { "Accept": "image/jpeg" } });
+        const res = await fetch(svg[0], { headers: { "Accept": "image/svg+xml" } });
         const data = await res.text();
         const png = await svg2png(data);
         console.log(await terminalImage.buffer(png));
@@ -598,6 +595,10 @@ const mergeHistory = async (question, history) => {
     .replace("${history}", history);
   return await completePrompt(prompt);
 };
+
+await initialize(
+  fs.readFileSync('./node_modules/svg2png-wasm/svg2png_wasm_bg.wasm')
+);
 
 // main loop - answer the user's questions
 while (true) {
