@@ -1,4 +1,9 @@
-Answer the following questions as best you can. If you do not know the answer, you should simply say so, not invent anything. Always include an Action: if you can think of one, you must always include an Action Input: with every action. You have access to the following tools:
+Answer the following questions as best you can. If you do not know the answer, you should simply say so, not invent anything.
+Always include an Action: if you can think of one, you must always include an Action Input: with every action.
+
+Do not use example*.com or any of their aliases for any URL actions.
+
+You have access to the following tools:
 
 ${tools}
 
@@ -6,11 +11,11 @@ Use the following format:
 
 Question: the input question you must answer
 Thought: you should always think about what to do
-Action: the action to take, should be one of [search,retrieve,savecode,savetext,savehtml,metadata,image,install,apicall,calculator,script,reset]
-Action Input: the input to the action
+Action: the action to take, must be one of [${toolList}]
+Action Input: the input to the action in the form of a text string
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat any number of times)
-Thought: I now know the final answer
+Thought: I now have a final answer for you
 Final Answer: the final answer to the original input question
 
 Begin!

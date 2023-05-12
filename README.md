@@ -25,6 +25,8 @@ Install dependencies, and run (with node >= v18):
 % npm install
 ~~~
 
+To display videos in the terminal, you will need to install `ffmpeg`.
+
 You'll need to have an OpenAI API key, and optionally a Bing Search API key. These can be supplied to the application via a `.env` file:
 
 ~~~
