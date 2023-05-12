@@ -21,7 +21,6 @@ const router = new Router();
 const MODEL = process.env.MODEL || 'text-davinci-003';
 const RESPONSE_LIMIT = parseInt(process.env.RESPONSE_LIMIT,10)||512;
 const TEMPERATURE = parseFloat(process.env.temperature) || 0.25;
-const stream = true;
 
 setResponseLimit(RESPONSE_LIMIT);
 
@@ -88,14 +87,14 @@ async function fetchStream(url, options) {
 // use the given model to complete a given prompts
 const completePrompt = async (prompt) => {
   let res = { ok: false, status: 500 };
-  const dummy = "I took too long thinking about that.";
+  const timeout  = "I took too long thinking about that.";
   const body = {
     model: MODEL,
     max_tokens: RESPONSE_LIMIT,
     temperature: TEMPERATURE,
-    stream,
+    stream: true,
     user: 'BingChain',
-    frequency_penalty: 0.5,
+    frequency_penalty: 0.25,
     n: 1,
     stop: ["Observation:", "Question:"],
   };
@@ -128,7 +127,7 @@ const completePrompt = async (prompt) => {
   catch (ex) {
     console.log(`${colour.red}(${ex.message})${colour.normal}`);
   }
-  return dummy;
+  return timeout;
 };
 
 const answerQuestion = async (question) => {
