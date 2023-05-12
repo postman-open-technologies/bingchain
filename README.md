@@ -1,6 +1,6 @@
 # 🕵️🔗 BingChain
 
-This is an evolution of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~600 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, and a scientific calculator) in order to hold conversations and answer questions.
+This is an evolution of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~250 lines of core code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, and a scientific calculator) in order to hold conversations and answer questions.
 
 Here's an example:
 
@@ -24,6 +24,8 @@ Install dependencies, and run (with node >= v18):
 ~~~
 % npm install
 ~~~
+
+To display images and videos in the terminal, you will need to install `ffmpeg`.
 
 You'll need to have both an OpenAI and Bing API keys. These can be supplied to the application via a `.env` file:
 
