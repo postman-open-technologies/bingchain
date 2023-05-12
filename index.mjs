@@ -94,7 +94,7 @@ const completePrompt = async (prompt) => {
     temperature: TEMPERATURE,
     stream: true,
     user: 'BingChain',
-    frequency_penalty: 0.25,
+    //frequency_penalty: 0.25,
     n: 1,
     stop: ["Observation:", "Question:"],
   };
