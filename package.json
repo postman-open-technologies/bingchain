@@ -4,8 +4,7 @@
   "description": "Langchain in ~300 lines of code",
   "main": "index.mjs",
   "scripts": {
-    "lint": "npx eslint index.mjs",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "lint": "npx eslint index.mjs lib/tools.mjs lib/colour.mjs", "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Mike Ralphson",
   "engines": {
