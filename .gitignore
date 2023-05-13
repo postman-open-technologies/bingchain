@@ -1,5 +1,7 @@
 node_modules
 .env
+history.yaml
 *.html
+*.pdf
 .DS_Store
 temp.png

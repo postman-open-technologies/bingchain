@@ -36,6 +36,9 @@ MODEL=gpt-4
 TOKEN_LIMIT=32768
 TEMPERATURE=0.25
 RESPONSE_LIMIT=512
+MAX_REDIRECTS=10
+PORT=1337
+DEBUG=""
 ~~~
 
 Set the token limit to the advertised limit of the model you are using, so 32768 for `gpt-4`, 4096 for `text-davinci-003` and 2048 for `text-curie-001`.

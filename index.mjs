@@ -5,13 +5,13 @@ import fs from "node:fs";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import yaml from "yaml";
-import clipboard from 'clipboardy';
 import Koa from 'koa';
 import serve from 'koa-static';
 import Router from 'koa-router';
+import yaml from 'yaml';
+import JSON5 from 'json5'
 
-import { tools, history, addToHistory, setResponseLimit, scanEmbeddedImages, fiddleSrc,
+import { tools, history, debug, addToHistory, setResponseLimit, scanEmbeddedImages, fiddleSrc,
   setPrompt, setRetrievedText } from "./lib/tools.mjs";
 import { colour } from "./lib/colour.mjs";
 
@@ -19,7 +19,7 @@ const router = new Router();
 
 const MODEL = process.env.MODEL || 'text-davinci-003';
 const RESPONSE_LIMIT = parseInt(process.env.RESPONSE_LIMIT,10)||512;
-const TEMPERATURE = parseFloat(process.env.temperature) || 0.25;
+const TEMPERATURE = parseFloat(process.env.TEMPERATURE) || 0.25;
 
 setResponseLimit(RESPONSE_LIMIT);
 
@@ -36,9 +36,16 @@ router.get('/', '/', (ctx) => {
 app
   .use(router.routes())
   .use(router.allowedMethods());
-app.listen(1337);
+app.listen(parseInt(process.env.PORT,10)||1337);
 
-const rl = readline.createInterface({ input, output });
+let localHistory = [];
+try {
+  localHistory = yaml.parse(fs.readFileSync('./history.yaml','utf8'));
+}
+catch (ex) {}
+process.env.CHAT_QUERIES = localHistory.join(', ');
+
+const rl = readline.createInterface({ input, output, history: localHistory, removeHistoryDuplicates: true });
 
 const promptTemplate = fs.readFileSync("./prompt.txt", "utf8");
 const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
@@ -61,22 +68,23 @@ async function fetchStream(url, options) {
           if (value) {
             const chunks = `${partial}${Buffer.from(value).toString()}`.split('\n');
             for (let chunk of chunks) {
-              if (chunk && chunk.length > 1) {
-                chunk = chunk.split('data:').join('');
-                chunk = chunk.split('error:').join('');
-                chunk = chunk.trim();
-                hoist = chunk;
-                try {
-                  const json = yaml.parse(`${chunk}`.split('\n').join(''), { strict: false, loglevel: 'silent', prettyErrors: true })?.choices?.[0];
-                  partial = "";
-                  let text = (json && json.delta ? json.delta.content : json?.text) || '';
-                  process.stdout.write(text);
-                  completion += text;
+              chunk = chunk.replaceAll('[DONE]', '["DONE"]');
+              hoist = chunk;
+              let json = {};
+              try {
+                if (parseInt(debug(),10) >= 3) console.log(`${colour.cyan}${chunk}${colour.normal}`);
+                json = JSON5.parse(`{${chunk}}`)?.data?.choices?.[0];
+                let text = (json && json.delta ? json.delta.content : json?.text) || '';
+                process.stdout.write(text);
+                completion += text;
+              }
+              catch (ex) {
+                if (json.error) {
+                  const result = json.error;
+                  return result;
                 }
-                catch (ex) {
-                  process.stdout.write(`(stutter - ${ex.message})`);
-                  partial += chunk + "\n";
-                }
+                const result = `(Stutter: ${ex.message})`;
+                return result;
               }
             }
           }
@@ -85,6 +93,12 @@ async function fetchStream(url, options) {
         });
       }
       push();
+    },
+    error (err) {
+      console.log(`${colour.red}(${err.message})${colour.normal}`);
+    },
+    end () {
+      if (debug()) console.log(`${colour.cyan}(End of stream)${colour.normal}`);
     }
   });
   const newResponse = new Response(stream);
@@ -145,7 +159,9 @@ const answerQuestion = async (question) => {
     Object.keys(tools)
       .map((toolname) => `${toolname}: ${tools[toolname].description}`)
       .join("\n")
-  ).replace("${toolList}", Object.keys(tools).join(", "));
+  ).replace("${toolList}", Object.keys(tools).join(", ")).replace('${language}',process.env.LANGUAGE);
+  process.env.PROMPT = prompt;
+  process.env.CHAT_PROMPT = prompt;
 
   // allow the LLM to iterate until it finds a final answer
   while (true) {
@@ -201,23 +217,29 @@ const mergeHistory = async (question, history) => {
   return await completePrompt(prompt);
 };
 
-Object.keys(tools).map(async (toolname) => {
+Object.keys(tools).sort().map(async (toolname) => {
   process.stdout.write(`${colour.blue}Initialising ${toolname}... `);
   await tools[toolname].init();
+});
+
+const query = `Can you get the CHAT_QUERIES so you can remember the previous questions I have asked?`;
+const response = await answerQuestion(query);
+console.log(`\n${colour.green}${response.trimStart()}${colour.normal}`);
+addToHistory(`Q:${query}\nA:${response}\n`);
+
+rl.on('history',(history) => {
+  fs.writeFileSync('./history.yaml',yaml.stringify(history),'utf8');
 });
 
 // main loop - answer the user's questions
 while (true) {
   let question = await rl.question(`${colour.red}How can I help? >${colour.grey} `);
-  if (question) clipboard.writeSync(question);
   let questionLC = question.trim().toLowerCase();
   questionLC = question.split('please').join('').trim();
-  const verb = questionLC.split(' ')[0];
+  const verb = questionLC.split(' ')[0].toLowerCase().trim();
   if (tools[verb]) {
     question = await tools[verb].execute(questionLC.slice(verb.length+1));
-  }
-  if (history.length > 0) {
-    question = await mergeHistory(question, history);
+    console.log(`${colour.magenta}${question}${colour.normal}`);
   }
   const answer = await answerQuestion(question);
   console.log(`\n${colour.green}${answer.trimStart()}${colour.normal}`);
