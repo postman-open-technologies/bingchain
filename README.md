@@ -1,6 +1,6 @@
 # 🕵️🔗 BingChain
 
-This is an evolution of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~600 lines of code. In essence, it is an LLM (GPT-3.5) powered chat application that is able to use tools (Microsoft Bing search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, and a scientific calculator) in order to hold conversations and answer questions.
+This is an evolution of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~250 lines of core code. In essence, it is a multi-model LLM-powered chat application that is able to use tools (Microsoft **Bing** search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, JsFiddle creation, image and video preview, and a scientific calculator, as well as meta-tools such as `list`, `disable`, `reset` and `debug`) in order to build a **chain** of thought to hold conversations and answer questions.
 
 Here's an example:
 
@@ -15,7 +15,7 @@ Q: What time would an average human expect for solving?
 It takes the average person about three hours to solve a Rubik's cube for the first time.
 ~~~
 
-This is not intended to be a replacement for LangChain, which has many composable elements, instead it was built to demonstrate the power of assembling a set of tools (such as API calling and Javascript execution). If you're interested in how LangChain, and similar tools work, this is a very good starting point.
+This is not intended to be a replacement for LangChain, which has many alternative and composable building blocks, instead it was built to demonstrate the power of assembling a set of tools (such as API calling and Javascript execution). If you're interested in how LangChain, and similar tools work, this is a very good starting point.
 
 ## Running / developing
 
@@ -25,31 +25,58 @@ Install dependencies, and run (with node >= v18):
 % npm install
 ~~~
 
-You'll need to have both an OpenAI and Bing API keys. These can be supplied to the application via a `.env` file:
+To display videos in the terminal, you will need to install `ffmpeg`.
+
+You'll need to have an OpenAI API key, and optionally a Bing Search API key. These can be supplied to the application via a `.env` file:
 
 ~~~
 OPENAI_API_KEY="..."
 BING_API_KEY="..."
 MODEL=gpt-4
 TOKEN_LIMIT=32768
+TEMPERATURE=0.25
+RESPONSE_LIMIT=512
 ~~~
 
 Set the token limit to the advertised limit of the model you are using, so 32768 for `gpt-4`, 4096 for `text-davinci-003` and 2048 for `text-curie-001`.
 
 The clever part is the initial prompt, which is held in [`prompt.txt`](https://raw.githubusercontent.com/postman-open-technologies/bingchain/main/prompt.txt).
 
-Example prompts and responses to show how the various built-in tools work can be found in the [`examples`](https://github.com/postman-open-technologies/bingchain/tree/main/examples) directory.
+Example prompts and responses to show how the various built-in tools work can be found in the [`examples`](https://github.com/postman-open-technologies/bingchain/tree/main/examples) directory. The tools themselves are defined in [`lib/tools.mjs`](https://github.com/postman-open-technologies/bingchain/tree/main/lib/tools.mjs), including the `description` properties which act as further prompts to the LLM to suggest when and how the tools should be used.
+
+There are a few Javascript and CSS files scattered about from [jsfiddle.net](https://jsfiddle.net/) to make the `savetext`, `savehtml` and `savecode` tools work locally.
+
+**Note**: to enable the Javascript sandbox, you must pass the option `--experimental-vm-modules` to Node.js. The included `go.sh` script sets the Node.js recommended options.
+
+## Example dialogue
 
 You can now run the chain:
 
-~~~
-% node index.mjs
-How can I help? > what was the name of the first man on the moon?
-Neil Armstrong
-~~~
+```repl
+% ./go.sh
+How can I help? > what was the name of the first woman in space?
+```
 
-**Note**: to enable the Javascript sandbox, you must pass the option `--experimental-vm-modules` to Node.js.
+* I need to search for the name of the first woman in space.
+* *Action*: `search`
+* *Action Input*: `first woman in space name`
+
+Calling `search` with `first woman in space name`
+
+1. **Valentina Tereshkova - First Woman in Space - Biography**
+2. **Valentina Tereshkova: First Woman in Space | Space**
+3. **The First Woman in Space: Valentina Tereshkova - ThoughtCo**
+
+* *Thought*: I now know the final answer.
+* *Final Answer*: The name of the first woman in space is Valentina Tereshkova.
+* **The name of the first woman in space is Valentina Tereshkova.**
+
+## Authors
+
+* [Mike Ralphson](https://github.com/MikeRalphson)
+* [Gbadeyboh Bello](https://github.com/Gbahdeyboh)
+* [Colin Eberhardt](https://github.com/ColinEberhardt)
 
 ## Future work planned
 
-* Ideas gratefully received.
+* Ideas and PRs gratefully received.
