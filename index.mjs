@@ -6,7 +6,6 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 import yaml from "yaml";
-import { Parser } from "expr-eval";
 import clipboard from 'clipboardy';
 import Koa from 'koa';
 import serve from 'koa-static';
@@ -43,7 +42,6 @@ const rl = readline.createInterface({ input, output });
 
 const promptTemplate = fs.readFileSync("./prompt.txt", "utf8");
 const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
-const pluginTemplate = fs.readFileSync("./plugin.txt", "utf8");
 
 async function fetchStream(url, options) {
   completion = "";
@@ -106,7 +104,7 @@ const completePrompt = async (prompt) => {
     user: 'BingChain',
     //frequency_penalty: 0.25,
     n: 1,
-    stop: ["Observation:", "Question:"],
+    stop: ["Observation:", "Question:"]
   };
   if (MODEL.startsWith('text')) {
     body.prompt = prompt;
@@ -122,9 +120,9 @@ const completePrompt = async (prompt) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: "Bearer " + process.env.OPENAI_API_KEY,
+        Authorization: "Bearer " + process.env.OPENAI_API_KEY
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body)
     });
     if (completion.startsWith(' ')) {
       completion = completion.slice(1);
