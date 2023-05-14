@@ -11,8 +11,8 @@ import Router from 'koa-router';
 import yaml from 'yaml';
 import JSON5 from 'json5'
 
-import { tools, history, debug, addToHistory, setResponseLimit, scanEmbeddedImages, fiddleSrc,
-  setPrompt, setRetrievedText } from "./lib/tools.mjs";
+import { tools, history, debug, addToHistory, setResponseLimit, scanEmbeddedImages,
+  fiddleSrc, setPrompt, setRetrievedText } from "./lib/tools.mjs";
 import { colour } from "./lib/colour.mjs";
 
 const router = new Router();
@@ -36,7 +36,15 @@ router.get('/', '/', (ctx) => {
 app
   .use(router.routes())
   .use(router.allowedMethods());
-app.listen(parseInt(process.env.PORT,10)||1337);
+try {
+  app.listen(parseInt(process.env.PORT,10)||1337);
+}
+catch (ex) {
+  tools.disable.execute('savetext');
+  tools.disable.execute('savehtml');
+  tools.disable.execute('savecode');
+  tools.disable.execute('savecss');
+}
 
 let localHistory = [];
 try {
@@ -136,6 +144,7 @@ const completePrompt = async (prompt) => {
         "Content-Type": "application/json",
         Authorization: "Bearer " + process.env.OPENAI_API_KEY
       },
+      redirect: 'follow',
       body: JSON.stringify(body)
     });
     if (completion.startsWith(' ')) {
@@ -222,7 +231,7 @@ Object.keys(tools).sort().map(async (toolname) => {
   await tools[toolname].init();
 });
 
-const query = `Can you get the CHAT_QUERIES so you can remember the previous questions I have asked?`;
+const query = `Can you get the CHAT_QUERIES so you can remember the previous questions I have asked? You do not need to list them.`;
 const response = await answerQuestion(query);
 console.log(`\n${colour.green}${response.trimStart()}${colour.normal}`);
 addToHistory(`Q:${query}\nA:${response}\n`);

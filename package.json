@@ -23,6 +23,7 @@
     "koa": "^2.14.2",
     "koa-router": "^12.0.0",
     "koa-static": "^5.0.0",
+    "mammoth": "^1.5.1",
     "meta-fetcher": "^3.1.1",
     "open": "^9.1.0",
     "pdf-parse": "^1.1.1",
