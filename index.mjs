@@ -24,7 +24,7 @@ const TEMPERATURE = parseFloat(process.env.temperature) || 0.25;
 
 setResponseLimit(RESPONSE_LIMIT);
 
-let completion = "";
+let completion = [];
 let apiServer = "";
 
 const app = new Koa();
@@ -45,7 +45,7 @@ const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
 const pluginTemplate = fs.readFileSync("./plugin.txt", "utf8");
 
 async function fetchStream(url, options) {
-  completion = "";
+  completion = [];
   const response = await fetch(url, options);
   const reader = response.body.getReader();
   const stream = new ReadableStream({
@@ -66,7 +66,7 @@ async function fetchStream(url, options) {
                 const json = yaml.parse((chunk||'{}').replace('data: {', '{')).choices?.[0];
                 let text = (json && json.delta ? json.delta.content : json?.text) || '';
                 process.stdout.write(text);
-                completion += text;
+                completion.push(text);
               }
             }
           } catch (ex) {
@@ -116,7 +116,8 @@ const completePrompt = async (prompt) => {
       },
       body: JSON.stringify(body),
     });
-    if (completion.startsWith(' ')) {
+    if (Array.isArray(completion)) completion = completion.join('');
+    while (completion.startsWith(' ')) {
       completion = completion.slice(1);
     }
     if (!completion.endsWith('\n\n')) {
