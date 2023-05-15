@@ -11,6 +11,22 @@ import serve from 'koa-static';
 import Router from 'koa-router';
 import yaml from 'yaml';
 import JSON5 from 'json5'
+import { highlight } from 'cli-highlight';
+import chalk from 'chalk';
+
+const shTheme = {
+    keyword: chalk.white.bold,
+    string: chalk.magenta.bold,
+    number: chalk.green.bold,
+    boolean: chalk.yellow,
+    null: chalk.grey,
+    operator: chalk.red.bold,
+    punctuation: chalk.grey,
+    comment: chalk.cyan.italic,
+    regexp: chalk.yellow.bold.italic,
+    addition: chalk.grey,
+    deletion: chalk.red.strikethrough
+};
 
 import { tools, history, debug, addToHistory, setResponseLimit, scanEmbeddedImages,
   fiddleSrc, setPrompt, setRetrievedText } from "./lib/tools.mjs";
@@ -211,6 +227,9 @@ const answerQuestion = async (question) => {
         }
         if (actionInput && !actionInput.startsWith('[')) {
           setPrompt(prompt);
+          if (process.env.SYNTAX) {
+            actionInput = highlight(actionInput, { language: 'javascript', theme: shTheme, ignoreIllegals: true });
+          }
           if (!booting) console.log(`${colour.cyan}\nCalling '${action}' with "${actionInput}"${colour.normal}`);
           const result = await tools[action].execute(actionInput);
           prompt += `Observation: ${result||'None'}\n`;
@@ -249,12 +268,12 @@ Object.keys(tools).sort().map((toolname) => {
 });
 console.log(colour.normal);
 
-booting = true;
-const query = `Can you get the CHAT_QUERIES so you can remember the previous questions I have asked? You do not need to list them.`;
-process.stdout.write(`${colour.cyan}Please wait, bootstrapping conversation${colour.magenta}`);
-const response = await answerQuestion(query);
-//console.log(`\n${colour.green}${response.trimStart()}${colour.normal}`);
-//addToHistory(`Q:${query}\nA:${response}\n`);
+if (localHistory.length && !process.env.FAST_STARTUP) {
+  booting = true;
+  const query = `Can you get the CHAT_QUERIES so you can remember the previous questions I have asked? You do not need to list them.`;
+  process.stdout.write(`${colour.cyan}Please wait, bootstrapping conversation${colour.magenta}`);
+  const response = await answerQuestion(query);
+}
 
 rl.on('history',(history) => {
   fs.writeFileSync('./history.yaml',yaml.stringify(history),'utf8');
@@ -281,7 +300,8 @@ while (true) {
       process.exit(0);
     }
     if (question.startsWith(':syntax')) {
-      question = "Please include ANSI escape sequences in code blocks, use appropriate syntax-highlighting for the language being output.";
+      const value = question.split(' ')[1].trim().toLowerCase();
+      process.env.SYNTAX = (value === 'on' || value === 'true' || value === '1' || value === 'yes') ? 1 : 0;
     }
     if (question.startsWith(':help')) {
       question = "How should a novice user get the best out of this chat experience?";
@@ -301,7 +321,15 @@ while (true) {
       question = `Observe that the ${key} environment variable has been set to "${value}".`;
     }
   }
-  const answer = await answerQuestion(question);
+  let answer = await answerQuestion(question);
+  while (process.env.SYNTAX === '1' && answer.indexOf('```\n') >= 0) {
+    const sections = answer.split('```');
+    const preamble = sections[0];
+    const language = sections[1].split('\n')[0].trim();
+    const code = sections[1].replace(language + '\n', '');
+    const tail = sections[2];
+    answer = preamble + highlight(code, { language, theme: shTheme, ignoreIllegals: true }) + tail;
+  }
   console.log(`\n${colour.green}${answer.trimStart()}${colour.normal}`);
   addToHistory(`Q:${question}\nA:${answer}\n`);
 }
