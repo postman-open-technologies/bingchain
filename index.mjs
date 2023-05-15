@@ -24,8 +24,8 @@ const TEMPERATURE = parseFloat(process.env.TEMPERATURE) || 0.25;
 setResponseLimit(RESPONSE_LIMIT);
 
 let completion = "";
-let partial = "";
 let apiServer = "";
+let booting = true;
 
 const app = new Koa();
 app.use(serve('.'));
@@ -60,7 +60,6 @@ const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
 
 async function fetchStream(url, options) {
   completion = "";
-  partial = "";
   const response = await fetch(url, options);
   const reader = response.body.getReader();
   const stream = new ReadableStream({
@@ -74,7 +73,8 @@ async function fetchStream(url, options) {
           let json;
           let hoist;
           if (value) {
-            const chunks = `${partial}${Buffer.from(value).toString()}`.split('\n');
+            if (booting) process.stdout.write('.')
+            const chunks = `${Buffer.from(value).toString()}`.split('\n');
             for (let chunk of chunks) {
               chunk = chunk.replaceAll('[DONE]', '["DONE"]');
               hoist = chunk;
@@ -83,7 +83,7 @@ async function fetchStream(url, options) {
                 if (parseInt(debug(),10) >= 3) console.log(`${colour.cyan}${chunk}${colour.normal}`);
                 json = JSON5.parse(`{${chunk}}`)?.data?.choices?.[0];
                 let text = (json && json.delta ? json.delta.content : json?.text) || '';
-                process.stdout.write(text);
+                if (!booting) process.stdout.write(text);
                 completion += text;
               }
               catch (ex) {
@@ -147,9 +147,6 @@ const completePrompt = async (prompt) => {
       redirect: 'follow',
       body: JSON.stringify(body)
     });
-    if (completion.startsWith(' ')) {
-      completion = completion.slice(1);
-    }
     if (!completion.endsWith('\n\n')) {
       completion += '\n';
     }
@@ -202,7 +199,7 @@ const answerQuestion = async (question) => {
         }
         if (actionInput) {
           setPrompt(prompt);
-          console.log(colour.blue+"\nCalling", action, "with", actionInput, colour.normal);
+          if (!booting) console.log(colour.blue+"\nCalling", action, "with", actionInput, colour.normal);
           const result = await tools[action].execute(actionInput);
           prompt += `Observation: ${result||'None'}\n`;
         }
@@ -226,15 +223,18 @@ const mergeHistory = async (question, history) => {
   return await completePrompt(prompt);
 };
 
+booting = true;
+
 Object.keys(tools).sort().map(async (toolname) => {
   process.stdout.write(`${colour.blue}Initialising ${toolname}... `);
   await tools[toolname].init();
 });
 
 const query = `Can you get the CHAT_QUERIES so you can remember the previous questions I have asked? You do not need to list them.`;
+process.stdout.write(`${colour.magenta}Booting`);
 const response = await answerQuestion(query);
-console.log(`\n${colour.green}${response.trimStart()}${colour.normal}`);
-addToHistory(`Q:${query}\nA:${response}\n`);
+//console.log(`\n${colour.green}${response.trimStart()}${colour.normal}`);
+//addToHistory(`Q:${query}\nA:${response}\n`);
 
 rl.on('history',(history) => {
   fs.writeFileSync('./history.yaml',yaml.stringify(history),'utf8');
@@ -242,6 +242,7 @@ rl.on('history',(history) => {
 
 // main loop - answer the user's questions
 while (true) {
+  booting = false;
   let question = await rl.question(`${colour.red}How can I help? >${colour.grey} `);
   let questionLC = question.trim().toLowerCase();
   questionLC = question.split('please').join('').trim();

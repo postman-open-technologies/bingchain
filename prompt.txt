@@ -22,7 +22,7 @@ Action: the action to take, must be one of [${toolList}]
 Action Input: the input to the action in the form of a text string
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat any number of times)
-Thought: I now have a final answer for you
+Thought: I now have a final answer for you.
 Final Answer: the final answer to the original input question
 
 Begin!
