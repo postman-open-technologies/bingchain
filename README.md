@@ -1,6 +1,6 @@
 # 🕵️🔗 BingChain
 
-This is an evolution of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~250 lines of core code. In essence, it is a multi-model LLM-powered chat application that is able to use tools (Microsoft **Bing** search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, JsFiddle creation, image and video preview, and a scientific calculator, as well as meta-tools such as `list`, `disable`, `reset` and `debug`) in order to build a **chain** of thought to hold conversations and answer questions.
+This is an evolution of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~300 lines of core code. In essence, it is a multi-model LLM-powered chat application that is able to use tools (Microsoft **Bing** search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, JsFiddle creation, image and video preview, and a scientific calculator, as well as meta-tools such as `list`, `disable`, `reset` and `debug`) in order to build a **chain** of thought to hold conversations and answer questions.
 
 Here's an example:
 
@@ -40,11 +40,12 @@ MAX_REDIRECTS=10
 PORT=1337
 LANGUAGE=en_GB:en
 DEBUG=""
+PROMPT_OVERRIDE=Simply answer me this: \"${question}\"
 ~~~
 
 Set the token limit to the advertised limit of the model you are using, so 32768 for `gpt-4`, 4096 for `text-davinci-003` and 2048 for `text-curie-001`.
 
-The clever part is the initial prompt, which is held in [`prompt.txt`](https://raw.githubusercontent.com/postman-open-technologies/bingchain/main/prompt.txt).
+The clever part is the default initial prompt, which is held in [`prompt.txt`](https://raw.githubusercontent.com/postman-open-technologies/bingchain/main/prompt.txt), unless overridden by the `PROMPT_OVERRIDE` environment variable.
 
 Example prompts and responses to show how the various built-in tools work can be found in the [`examples`](https://github.com/postman-open-technologies/bingchain/tree/main/examples) directory. The tools themselves are defined in [`lib/tools.mjs`](https://github.com/postman-open-technologies/bingchain/tree/main/lib/tools.mjs), including the `description` properties which act as further prompts to the LLM to suggest when and how the tools should be used.
 
@@ -74,6 +75,11 @@ Calling `search` with `first woman in space name`
 * *Thought*: I now know the final answer.
 * *Final Answer*: The name of the first woman in space is Valentina Tereshkova.
 * **The name of the first woman in space is Valentina Tereshkova.**
+
+### Exiting the chain / vi mode
+
+* You can use `vi`/`vim`-like commands to exit, such as `:q` or you can Ctrl-C twice to exit.
+* You can use `:set` to query all environment variables or `:set [variable]=[value]` to temporarily amend the current environment.
 
 ## Authors
 

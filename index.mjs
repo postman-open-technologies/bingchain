@@ -2,6 +2,7 @@ import env from "dotenv";
 env.config();
 
 import fs from "node:fs";
+import https from "node:https";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
@@ -15,6 +16,8 @@ import { tools, history, debug, addToHistory, setResponseLimit, scanEmbeddedImag
   fiddleSrc, setPrompt, setRetrievedText } from "./lib/tools.mjs";
 import { colour } from "./lib/colour.mjs";
 
+process.exitCode = 1;
+
 const router = new Router();
 
 const MODEL = process.env.MODEL || 'text-davinci-003';
@@ -22,6 +25,8 @@ const RESPONSE_LIMIT = parseInt(process.env.RESPONSE_LIMIT,10)||512;
 const TEMPERATURE = parseFloat(process.env.TEMPERATURE) || 0.25;
 
 setResponseLimit(RESPONSE_LIMIT);
+
+const agent = new https.Agent({ keepAlive: true, keepAliveMsecs: 120000, scheduling: 'lifo', family: 0, noDelay: false, zonread: { buffer: Buffer.alloc(RESPONSE_LIMIT * 2.75) } });
 
 let completion = "";
 let apiServer = "";
@@ -60,6 +65,7 @@ const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
 
 async function fetchStream(url, options) {
   completion = "";
+  let streamNo = 0;
   const response = await fetch(url, options);
   const reader = response.body.getReader();
   const stream = new ReadableStream({
@@ -73,9 +79,10 @@ async function fetchStream(url, options) {
           let json;
           let hoist;
           if (value) {
-            if (booting) process.stdout.write('.')
             const chunks = `${Buffer.from(value).toString()}`.split('\n');
             for (let chunk of chunks) {
+              streamNo++;
+              if (booting && streamNo % 20 === 1) process.stdout.write('.')
               chunk = chunk.replaceAll('[DONE]', '["DONE"]');
               hoist = chunk;
               let json = {};
@@ -145,7 +152,8 @@ const completePrompt = async (prompt) => {
         Authorization: "Bearer " + process.env.OPENAI_API_KEY
       },
       redirect: 'follow',
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      agent
     });
     if (!completion.endsWith('\n\n')) {
       completion += '\n';
@@ -168,6 +176,10 @@ const answerQuestion = async (question) => {
   ).replace("${toolList}", Object.keys(tools).join(", ")).replace('${language}',process.env.LANGUAGE);
   process.env.PROMPT = prompt;
   process.env.CHAT_PROMPT = prompt;
+
+  if (process.env.PROMPT_OVERRIDE) {
+    prompt = process.env.PROMPT_OVERRIDE.replaceAll("${question}", question);
+  }
 
   // allow the LLM to iterate until it finds a final answer
   while (true) {
@@ -197,9 +209,9 @@ const answerQuestion = async (question) => {
         else {
           actionInput = actionInput.split('\n\n')[0].trim();
         }
-        if (actionInput) {
+        if (actionInput && !actionInput.startsWith('[')) {
           setPrompt(prompt);
-          if (!booting) console.log(colour.blue+"\nCalling", action, "with", actionInput, colour.normal);
+          if (!booting) console.log(`${colour.cyan}\nCalling '${action}' with "${actionInput}"${colour.normal}`);
           const result = await tools[action].execute(actionInput);
           prompt += `Observation: ${result||'None'}\n`;
         }
@@ -223,15 +235,23 @@ const mergeHistory = async (question, history) => {
   return await completePrompt(prompt);
 };
 
-booting = true;
-
-Object.keys(tools).sort().map(async (toolname) => {
-  process.stdout.write(`${colour.blue}Initialising ${toolname}... `);
-  await tools[toolname].init();
+process.stdout.write(`${colour.cyan}Initialising built-in tools: `);
+let allOk = true;
+let first = true;
+Object.keys(tools).sort().map((toolname) => {
+  if (!first) {
+    process.stdout.write(', ');
+  }
+  process.stdout.write(`${colour.magenta}${toolname}`);
+  const result = (async () => await tools[toolname].init())();
+  first = false;
+  if (!result) allOk = false;
 });
+console.log(colour.normal);
 
+booting = true;
 const query = `Can you get the CHAT_QUERIES so you can remember the previous questions I have asked? You do not need to list them.`;
-process.stdout.write(`${colour.magenta}Booting`);
+process.stdout.write(`${colour.cyan}Please wait, bootstrapping conversation${colour.magenta}`);
 const response = await answerQuestion(query);
 //console.log(`\n${colour.green}${response.trimStart()}${colour.normal}`);
 //addToHistory(`Q:${query}\nA:${response}\n`);
@@ -239,6 +259,10 @@ const response = await answerQuestion(query);
 rl.on('history',(history) => {
   fs.writeFileSync('./history.yaml',yaml.stringify(history),'utf8');
 });
+
+if (!allOk) {
+  console.log(`\n${colour.cyan}[2] some tools were disabled because of missing API keys or node.js features.${colour.normal}`);
+}
 
 // main loop - answer the user's questions
 while (true) {
@@ -250,6 +274,32 @@ while (true) {
   if (tools[verb]) {
     question = await tools[verb].execute(questionLC.slice(verb.length+1));
     console.log(`${colour.magenta}${question}${colour.normal}`);
+  }
+  if (verb.startsWith(':')) {
+    if (question.startsWith(':q') || question.startsWith(':wq')) {
+      console.log(`\nSaving history and exiting with 0.`);
+      process.exit(0);
+    }
+    if (question.startsWith(':syntax')) {
+      question = "Please include ANSI escape sequences in code blocks, use appropriate syntax-highlighting for the language being output.";
+    }
+    if (question.startsWith(':help')) {
+      question = "How should a novice user get the best out of this chat experience?";
+    }
+    if (question === (':set')) {
+      console.log(yaml.stringify(process.env));
+    }
+    else if (question.startsWith(':set ')) {
+      question = question.replace('=',' ');
+      question = question.split('  ').join(' ');
+      let words = question.split(' ');
+      let key = words[1]
+      key = key.toUpperCase();
+      words.splice(0, 2);
+      const value = words.join(' ');
+      process.env[key] = value;
+      question = `Observe that the ${key} environment variable has been set to "${value}".`;
+    }
   }
   const answer = await answerQuestion(question);
   console.log(`\n${colour.green}${answer.trimStart()}${colour.normal}`);
