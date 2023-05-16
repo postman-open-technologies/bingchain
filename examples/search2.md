@@ -1,4 +1,5 @@
 Prompt: Please tell me about the song "Daisy, Daisy" with reference to cultural importance.
+
 I should search for information about the song "Daisy, Daisy" and its cultural importance.
 
 Action: search
