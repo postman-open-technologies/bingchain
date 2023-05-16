@@ -29,19 +29,20 @@ To display videos in the terminal, you will need to install `ffmpeg`.
 
 You'll need to have an OpenAI API key, and optionally a Bing Search API key. These can be supplied to the application via a `.env` file:
 
-~~~
+```shell
 OPENAI_API_KEY="..."
 BING_API_KEY="..."
 MODEL=gpt-4
 TOKEN_LIMIT=32768
 TEMPERATURE=0.25
 RESPONSE_LIMIT=512
-MAX_REDIRECTS=10
 PORT=1337
-LANGUAGE=en_GB:en
-DEBUG=""
-PROMPT_OVERRIDE=Simply answer me this: \"${question}\"
-~~~
+GUI=1
+#LANG=Ukrainian
+#DEBUG=2
+#SEED_QUERIES=1
+#PROMPT_OVERRIDE=Riddle me this! ${question}
+```
 
 Set the token limit to the advertised limit of the model you are using, so 32768 for `gpt-4`, 4096 for `text-davinci-003` and 2048 for `text-curie-001`.
 
@@ -52,6 +53,10 @@ Example prompts and responses to show how the various built-in tools work can be
 There are a few Javascript and CSS files scattered about from [jsfiddle.net](https://jsfiddle.net/) to make the `savetext`, `savehtml` and `savecode` tools work locally.
 
 **Note**: to enable the Javascript sandbox, you must pass the option `--experimental-vm-modules` to Node.js. The included `go.sh` script sets the Node.js recommended options.
+
+## Start-up
+
+The application will display the built-in tools as it initialises them. Tool names followed by [1] are disabled by default for security reasons (i.e. they may access files on your local filesystem or your environment variables). You can enable them by typing `enable [toolname]` at the prompt. Tool names followed by [2] are disabled becuase you do not have the requisite API key in your environment or your version of Node.js does not support the required features.
 
 ## Example dialogue
 

@@ -107,7 +107,19 @@ const consume = async (value, chunkNo) => {
 async function fetchStream(url, options) {
   completion = "";
   let chunkNo = 0;
-  const response = await fetch(url, options);
+  let response = { ok: false, status: 418 }
+  try {
+    response = await fetch(url, options);
+  }
+  catch (ex) {
+    console.warn(`${colour.red}${ex.message}${colour.normal}`);
+  }
+  if (response.status !== 200) {
+    const text = await response.text();
+    console.warn(`${colour.red}${text}${colour.normal}`);
+    completion = text;
+    return text;
+  }
   const reader = response.body.getReader();
   const stream = new ReadableStream({
     start(controller) {
@@ -138,7 +150,7 @@ async function fetchStream(url, options) {
 
 // use the given model to complete a given prompts
 const completePrompt = async (prompt) => {
-  let res = { ok: false, status: 500 };
+  let res = { ok: false, status: 418 };
   const timeout  = "I took too long thinking about that.";
   const body = {
     model: MODEL,
@@ -157,28 +169,22 @@ const completePrompt = async (prompt) => {
     body.messages = [ { role: "system", content: "You are a helpful assistant who tries to answer all questions accurately and comprehensively." }, { role: "user", content: prompt }];
   }
 
-  try {
-    const url = `https://api.openai.com/v1/${MODEL.startsWith('text') ? '' : 'chat/'}completions`;
-    process.stdout.write(colour.grey);
-    let res = await fetchStream(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + process.env.OPENAI_API_KEY
-      },
-      redirect: 'follow',
-      body: JSON.stringify(body),
-      agent
-    });
-    if (!completion.endsWith('\n\n')) {
-      completion += '\n';
-    }
-    return completion;
+  const url = `https://api.openai.com/v1/${MODEL.startsWith('text') ? '' : 'chat/'}completions`;
+  process.stdout.write(colour.grey);
+  res = await fetchStream(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + process.env.OPENAI_API_KEY
+    },
+    redirect: 'follow',
+    body: JSON.stringify(body),
+    agent
+  });
+  if (!completion.endsWith('\n\n')) {
+    completion += '\n';
   }
-  catch (ex) {
-    console.log(`${colour.red}(${ex.message})${colour.normal}`);
-  }
-  return timeout;
+  return completion;
 };
 
 const answerQuestion = async (question) => {
@@ -187,8 +193,10 @@ const answerQuestion = async (question) => {
     "${tools}",
     Object.keys(tools)
       .map((toolname) => `${toolname}: ${tools[toolname].description}`)
-      .join("\n")
-  ).replace("${toolList}", Object.keys(tools).join(", ")).replace('${language}',process.env.LANGUAGE);
+      .join("\n"))
+    .replace("${toolList}", Object.keys(tools).join(", "))
+    .replace("${user}", process.env.USER)
+    .replace('${language}',process.env.LANG);
   process.env.PROMPT = prompt;
   process.env.CHAT_PROMPT = prompt;
 
@@ -267,7 +275,7 @@ Object.keys(tools).sort().map((toolname) => {
 });
 console.log(colour.normal);
 
-if (localHistory.length && !process.env.FAST_STARTUP) {
+if (localHistory.length && process.env.SEED_QUERIES) {
   booting = true;
   const query = `Can you get the CHAT_QUERIES so you can remember the previous questions I have asked? You do not need to list them.`;
   process.stdout.write(`${colour.cyan}Please wait, bootstrapping conversation${colour.magenta}`);
@@ -289,25 +297,28 @@ while (true) {
   let question = await rl.question(`${colour.red}How can I help? >${colour.grey} `);
   let questionLC = question.trim().toLowerCase();
   questionLC = question.split('please').join('').trim();
-  const verb = questionLC.split(' ')[0].toLowerCase().trim();
-  if (tools[verb]) {
-    question = await tools[verb].execute(clean(questionLC.slice(verb.length+1)));
-    console.log(`${colour.magenta}${question}${colour.normal}`);
+  let verb = questionLC.split(' ')[0].toLowerCase().trim();
+  if (tools[verb] || (verb.startsWith(':') && tools[verb.replace(':','')])) {
+    verb = verb.replace(':','');
+    console.log(`${colour.magenta}${await tools[verb].execute(clean(questionLC.slice(verb.length+1)))}${colour.normal}`);
+    question = '';
   }
-  if (verb.startsWith(':')) {
+  else if (verb.startsWith(':')) {
     if (question.startsWith(':q') || question.startsWith(':wq')) {
       console.log(`\nSaving history and exiting with 0.`);
       process.exit(0);
     }
-    if (question.startsWith(':syntax')) {
+    else if (question.startsWith(':syntax')) {
       const value = question.split(' ')[1].trim().toLowerCase();
       process.env.SYNTAX = (value === 'on' || value === 'true' || value === '1' || value === 'yes') ? 1 : 0;
+      question = '';
     }
-    if (question.startsWith(':help')) {
+    else if (question.startsWith(':help')) {
       question = "How should a novice user get the best out of this chat experience?";
     }
-    if (question === (':set')) {
+    else if (question === (':set')) {
       console.log(yaml.stringify(process.env));
+      question = '';
     }
     else if (question.startsWith(':set ')) {
       question = question.replace('=',' ');
@@ -318,7 +329,7 @@ while (true) {
       words.splice(0, 2);
       const value = words.join(' ');
       process.env[key] = value;
-      question = `Observe that the ${key} environment variable has been set to "${value}".`;
+      question = '';
     }
   }
   let answer = '';
@@ -331,7 +342,9 @@ while (true) {
     const tail = sections[2];
     answer = preamble + highlight(code, { language, theme: shTheme, ignoreIllegals: true }) + tail;
   }
-  console.log(`\n${colour.green}${answer.trimStart()}${colour.normal}`);
-  addToHistory(`Q:${question}\nA:${answer}\n`);
+  if (question || answer) {
+    console.log(`\n${colour.green}${answer.trimStart()}${colour.normal}`);
+    addToHistory(`Q:${question}\nA:${answer}\n`);
+  }
 }
 
