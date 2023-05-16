@@ -115,8 +115,16 @@ async function fetchStream(url, options) {
     console.warn(`${colour.red}${ex.message}${colour.normal}`);
   }
   if (response.status !== 200) {
-    const text = await response.text();
-    console.warn(`${colour.red}${text}${colour.normal}`);
+    process.stdout.write(`${colour.red}`);
+    let text = await response.text();
+    try {
+      let json = JSON5.parse(text);
+      if (json.error && json.error.message) {
+        completion = json.error.message;
+        return text;
+      }
+    }
+    catch (ex) {}
     completion = text;
     return text;
   }
