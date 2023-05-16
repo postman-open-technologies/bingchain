@@ -6,7 +6,6 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 import yaml from "yaml";
-import { Parser } from "expr-eval";
 import clipboard from 'clipboardy';
 import Koa from 'koa';
 import serve from 'koa-static';
@@ -25,6 +24,7 @@ const TEMPERATURE = parseFloat(process.env.temperature) || 0.25;
 setResponseLimit(RESPONSE_LIMIT);
 
 let completion = "";
+let partial = "";
 let apiServer = "";
 
 const app = new Koa();
@@ -42,10 +42,10 @@ const rl = readline.createInterface({ input, output });
 
 const promptTemplate = fs.readFileSync("./prompt.txt", "utf8");
 const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
-const pluginTemplate = fs.readFileSync("./plugin.txt", "utf8");
 
 async function fetchStream(url, options) {
   completion = "";
+  partial = "";
   const response = await fetch(url, options);
   const reader = response.body.getReader();
   const stream = new ReadableStream({
@@ -58,19 +58,27 @@ async function fetchStream(url, options) {
           }
           let json;
           let hoist;
-          if (value) try {
-            const chunks = `${Buffer.from(value).toString()}`.split('\n');
+          if (value) {
+            const chunks = `${partial}${Buffer.from(value).toString()}`.split('\n');
             for (let chunk of chunks) {
-              if (chunk) {
-                hoist = chunk.trim();
-                const json = yaml.parse((chunk||'{}').replace('data: {', '{')).choices?.[0];
-                let text = (json && json.delta ? json.delta.content : json?.text) || '';
-                process.stdout.write(text);
-                completion += text;
+              if (chunk && chunk.length > 1) {
+                chunk = chunk.split('data:').join('');
+                chunk = chunk.split('error:').join('');
+                chunk = chunk.trim();
+                hoist = chunk;
+                try {
+                  const json = yaml.parse(`${chunk}`.split('\n').join(''), { strict: false, loglevel: 'silent', prettyErrors: true })?.choices?.[0];
+                  partial = "";
+                  let text = (json && json.delta ? json.delta.content : json?.text) || '';
+                  process.stdout.write(text);
+                  completion += text;
+                }
+                catch (ex) {
+                  process.stdout.write(`(stutter - ${ex.message})`);
+                  partial += chunk + "\n";
+                }
               }
             }
-          } catch (ex) {
-            console.log(ex.message, hoist);
           }
           controller.enqueue(value);
           push();
@@ -197,9 +205,9 @@ await initialize(
   fs.readFileSync('./node_modules/svg2png-wasm/svg2png_wasm_bg.wasm')
 );
 
-Object.keys(tools).map((toolname) => {
-  console.log(`${colour.blue}Initialising ${toolname}...${colour.normal}`);
-  tools[toolname].init();
+Object.keys(tools).map(async (toolname) => {
+  process.stdout.write(`${colour.blue}Initialising ${toolname}... `);
+  await tools[toolname].init();
 });
 
 // main loop - answer the user's questions
@@ -219,5 +227,3 @@ while (true) {
   console.log(`\n${colour.green}${answer.trimStart()}${colour.normal}`);
   addToHistory(`Q:${question}\nA:${answer}\n`);
 }
-
-
