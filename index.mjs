@@ -45,6 +45,7 @@ setResponseLimit(RESPONSE_LIMIT);
 const agent = new https.Agent({ keepAlive: true, keepAliveMsecs: 120000, scheduling: 'lifo', family: 0, noDelay: false, zonread: { buffer: Buffer.alloc(RESPONSE_LIMIT * 2.75) } });
 
 let completion = "";
+let partial = "";
 let apiServer = "";
 let booting = true;
 
@@ -204,7 +205,7 @@ const answerQuestion = async (question) => {
     // add this to the prompt
     prompt += response;
 
-    // display any embedded image URLs
+    // display any embedded image/video URLs
     scanEmbeddedImages(response);
 
     if (response.indexOf('Action:') >= 0) {
@@ -333,4 +334,3 @@ while (true) {
   console.log(`\n${colour.green}${answer.trimStart()}${colour.normal}`);
   addToHistory(`Q:${question}\nA:${answer}\n`);
 }
-
