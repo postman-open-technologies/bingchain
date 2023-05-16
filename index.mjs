@@ -154,7 +154,7 @@ const answerQuestion = async (question) => {
     // add this to the prompt
     prompt += response;
 
-    // display any embedded image URLs
+    // display any embedded image/video URLs
     scanEmbeddedImages(response);
 
     if (response.indexOf('Action:') >= 0) {
@@ -201,6 +201,10 @@ const mergeHistory = async (question, history) => {
   return await completePrompt(prompt);
 };
 
+await initialize(
+  fs.readFileSync('./node_modules/svg2png-wasm/svg2png_wasm_bg.wasm')
+);
+
 Object.keys(tools).map(async (toolname) => {
   process.stdout.write(`${colour.blue}Initialising ${toolname}... `);
   await tools[toolname].init();
@@ -223,4 +227,3 @@ while (true) {
   console.log(`\n${colour.green}${answer.trimStart()}${colour.normal}`);
   addToHistory(`Q:${question}\nA:${answer}\n`);
 }
-
