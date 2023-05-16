@@ -280,6 +280,7 @@ Object.keys(tools).sort().map((toolname) => {
   const result = (async () => await tools[toolname].init())();
   first = false;
   if (!result) allOk = false;
+  return true;
 });
 console.log(colour.normal);
 

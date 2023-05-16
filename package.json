@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "description": "Langchain in ~300 lines of code",
   "main": "index.mjs",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "npx eslint *.mjs lib/*.mjs"
   },
   "author": "Mike Ralphson",
   "engines": {
@@ -14,7 +16,6 @@
   "dependencies": {
     "chalk": "^4.1.2",
     "cli-highlight": "^2.1.11",
-    "clipboardy": "^3.0.0",
     "dotenv": "^16.0.3",
     "expr-eval": "^2.0.2",
     "gpt-tokenizer": "^1.0.5",
@@ -35,5 +36,8 @@
     "turndown-plugin-gfm": "^1.0.2",
     "uuid": "^9.0.0",
     "yaml": "^2.2.2"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^5.59.6"
   }
 }
