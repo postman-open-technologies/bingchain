@@ -29,7 +29,7 @@ const shTheme = {
 };
 
 import { tools, history, debug, addToHistory, setResponseLimit, scanEmbeddedImages,
-  fiddleSrc, setPrompt, setRetrievedText } from "./lib/tools.mjs";
+  fiddleSrc, setPrompt, setRetrievedText, clean } from "./lib/tools.mjs";
 import { colour } from "./lib/colour.mjs";
 
 process.exitCode = 1;
@@ -52,6 +52,9 @@ const app = new Koa();
 app.use(serve('.'));
 router.get('/', '/', (ctx) => {
   ctx.body = fiddleSrc;
+});
+router.get('/', '/temp.png', (ctx) => {
+  ctx.body = fs.readFileSync('./temp.png');
 });
 
 app
@@ -79,9 +82,31 @@ const rl = readline.createInterface({ input, output, history: localHistory, remo
 const promptTemplate = fs.readFileSync("./prompt.txt", "utf8");
 const mergeTemplate = fs.readFileSync("./merge.txt", "utf8");
 
+const consume = async (value, chunkNo) => {
+  const chunks = `${Buffer.from(value).toString()}`.split('\n');
+  for (let chunk of chunks) {
+    if (booting && chunkNo % 20 === 1) process.stdout.write('.')
+    chunk = chunk.replaceAll('[DONE]', '["DONE"]');
+    let json = {};
+    try {
+      if (parseInt(debug(),10) >= 3) console.log(`${colour.cyan}${chunk}${colour.normal}`);
+      json = JSON5.parse(`{${chunk}}`)?.data?.choices?.[0];
+      const text = clean((json && json.delta ? json.delta.content : json?.text) || '');
+      if (!booting) process.stdout.write(text);
+      completion += text;
+    }
+    catch (ex) {
+      if (json.error) {
+        return json.error;
+      }
+      return `(Stutter: ${ex.message})`;
+    }
+  }
+}
+
 async function fetchStream(url, options) {
   completion = "";
-  let streamNo = 0;
+  let chunkNo = 0;
   const response = await fetch(url, options);
   const reader = response.body.getReader();
   const stream = new ReadableStream({
@@ -92,33 +117,7 @@ async function fetchStream(url, options) {
             controller.close();
             return;
           }
-          let json;
-          let hoist;
-          if (value) {
-            const chunks = `${Buffer.from(value).toString()}`.split('\n');
-            for (let chunk of chunks) {
-              streamNo++;
-              if (booting && streamNo % 20 === 1) process.stdout.write('.')
-              chunk = chunk.replaceAll('[DONE]', '["DONE"]');
-              hoist = chunk;
-              let json = {};
-              try {
-                if (parseInt(debug(),10) >= 3) console.log(`${colour.cyan}${chunk}${colour.normal}`);
-                json = JSON5.parse(`{${chunk}}`)?.data?.choices?.[0];
-                let text = (json && json.delta ? json.delta.content : json?.text) || '';
-                if (!booting) process.stdout.write(text);
-                completion += text;
-              }
-              catch (ex) {
-                if (json.error) {
-                  const result = json.error;
-                  return result;
-                }
-                const result = `(Stutter: ${ex.message})`;
-                return result;
-              }
-            }
-          }
+          if (value) consume(value, ++chunkNo);
           controller.enqueue(value);
           push();
         });
@@ -210,7 +209,7 @@ const answerQuestion = async (question) => {
     if (response.indexOf('Action:') >= 0) {
       const action = response.split('Action:').pop().split('\n')[0].toLowerCase().trim();
       if (action && tools[action]) {
-        // execute the action specified by the LLMs
+        // execute the action specified by the LLM
         let actionInput = response.split('Action Input:').pop().trim();
         if (actionInput.indexOf("```") >= 0) {
           actionInput = actionInput.replace(/```.+/gi, "```");
@@ -231,7 +230,7 @@ const answerQuestion = async (question) => {
             actionInput = highlight(actionInput, { language: 'javascript', theme: shTheme, ignoreIllegals: true });
           }
           if (!booting) console.log(`${colour.cyan}\nCalling '${action}' with "${actionInput}"${colour.normal}`);
-          const result = await tools[action].execute(actionInput);
+          const result = await tools[action].execute(clean(actionInput));
           prompt += `Observation: ${result||'None'}\n`;
         }
       }
@@ -286,12 +285,13 @@ if (!allOk) {
 // main loop - answer the user's questions
 while (true) {
   booting = false;
+  debugger;
   let question = await rl.question(`${colour.red}How can I help? >${colour.grey} `);
   let questionLC = question.trim().toLowerCase();
   questionLC = question.split('please').join('').trim();
   const verb = questionLC.split(' ')[0].toLowerCase().trim();
   if (tools[verb]) {
-    question = await tools[verb].execute(questionLC.slice(verb.length+1));
+    question = await tools[verb].execute(clean(questionLC.slice(verb.length+1)));
     console.log(`${colour.magenta}${question}${colour.normal}`);
   }
   if (verb.startsWith(':')) {
@@ -321,7 +321,8 @@ while (true) {
       question = `Observe that the ${key} environment variable has been set to "${value}".`;
     }
   }
-  let answer = await answerQuestion(question);
+  let answer = '';
+  if (question) answer = await answerQuestion(question);
   while (process.env.SYNTAX === '1' && answer.indexOf('```\n') >= 0) {
     const sections = answer.split('```');
     const preamble = sections[0];

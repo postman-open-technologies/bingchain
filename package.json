@@ -18,6 +18,7 @@
     "dotenv": "^16.0.3",
     "expr-eval": "^2.0.2",
     "gpt-tokenizer": "^1.0.4",
+    "graphql-request": "^6.0.0",
     "jgexml": "^0.4.4",
     "jsfiddle": "github:MikeRalphson/node-jsfiddle",
     "json5": "^2.2.3",
