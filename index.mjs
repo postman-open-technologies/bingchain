@@ -6,6 +6,9 @@ import https from "node:https";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
+import { openaiCompletion } from "./lib/openai.mjs";
+import { anthropicCompletion } from "./lib/anthropic.mjs";
+
 import Koa from 'koa';
 import serve from 'koa-static';
 import Router from 'koa-router';
@@ -45,8 +48,40 @@ setResponseLimit(RESPONSE_LIMIT);
 const agent = new https.Agent({ keepAlive: true, keepAliveMsecs: 120000, scheduling: 'lifo', family: 0, noDelay: false, zonread: { buffer: Buffer.alloc(RESPONSE_LIMIT * 2.75) } });
 
 let completion = "";
+let partial = "";
+let carry = "{";
 let apiServer = "";
 let booting = true;
+
+const extractText = (chunk) => {
+  let json;
+  try {
+    json = JSON5.parse(`${carry}${chunk}}`);
+    carry = "{";
+    if (parseInt(debug(),10) >= 3) console.log(`${colour.cyan}${chunk}${colour.normal}`);
+  }
+  catch (ex) {
+    carry += chunk;
+    return;
+  }
+  let text;
+  if (json.data && json.data.choices) {
+    if (json.data.choices[0].delta) {
+      text = json.data.choices[0].delta.content;
+    }
+    else {
+      text = json.data.choices[0].text;
+    }
+  }
+  else if (json.data && json.data.stop&& json.data.completion) {
+    text = json.data.completion;
+  }
+  if (text) {
+    if (!booting) process.stdout.write(text);
+    completion += text;
+  }
+  return text;
+}
 
 const app = new Koa();
 app.use(serve('.'));
@@ -87,25 +122,11 @@ const consume = async (value, chunkNo) => {
   for (let chunk of chunks) {
     if (booting && chunkNo % 20 === 1) process.stdout.write('.')
     chunk = chunk.replaceAll('[DONE]', '["DONE"]');
-    let json = {};
-    try {
-      if (parseInt(debug(),10) >= 3) console.log(`${colour.cyan}${chunk}${colour.normal}`);
-      json = JSON5.parse(`{${chunk}}`)?.data?.choices?.[0];
-      const text = clean((json && json.delta ? json.delta.content : json?.text) || '');
-      if (!booting) process.stdout.write(text);
-      completion += text;
-    }
-    catch (ex) {
-      if (json.error) {
-        return json.error;
-      }
-      return `(Stutter: ${ex.message})`;
-    }
+    extractText(chunk);
   }
 }
 
 async function fetchStream(url, options) {
-  completion = "";
   let chunkNo = 0;
   let response = { ok: false, status: 418 }
   try {
@@ -118,14 +139,18 @@ async function fetchStream(url, options) {
     process.stdout.write(`${colour.red}`);
     let text = await response.text();
     try {
-      let json = JSON5.parse(text);
+      let json = JSON5.parse(partial+text);
       if (json.error && json.error.message) {
-        completion = json.error.message;
+        completion += json.error.message;
         return text;
       }
+      else {
+        partial = "";
+      }
     }
-    catch (ex) {}
-    completion = text;
+    catch (ex) {
+      partial = text;
+    }
     return text;
   }
   const reader = response.body.getReader();
@@ -156,44 +181,20 @@ async function fetchStream(url, options) {
   return text;
 }
 
-// use the given model to complete a given prompts
-const completePrompt = async (prompt) => {
-  let res = { ok: false, status: 418 };
-  const timeout  = "I took too long thinking about that.";
-  const body = {
-    model: MODEL,
-    max_tokens: RESPONSE_LIMIT,
-    temperature: TEMPERATURE,
-    stream: true,
-    user: 'BingChain',
-    //frequency_penalty: 0.25,
-    n: 1,
-    stop: ["Observation:", "Question:"]
-  };
-  if (MODEL.startsWith('text')) {
-    body.prompt = prompt;
+const getCompletion = async (prompt) => {
+  process.stdout.write(colour.grey);
+  completion = "";
+  if (process.env.PROVIDER === "anthropic") {
+    await anthropicCompletion(prompt, fetchStream, agent);
   }
   else {
-    body.messages = [ { role: "system", content: "You are a helpful assistant who tries to answer all questions accurately and comprehensively." }, { role: "user", content: prompt }];
+    await openaiCompletion(prompt, fetchStream, agent);
   }
-
-  const url = `https://api.openai.com/v1/${MODEL.startsWith('text') ? '' : 'chat/'}completions`;
-  process.stdout.write(colour.grey);
-  res = await fetchStream(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + process.env.OPENAI_API_KEY
-    },
-    redirect: 'follow',
-    body: JSON.stringify(body),
-    agent
-  });
   if (!completion.endsWith('\n\n')) {
     completion += '\n';
   }
-  return completion;
-};
+  return clean(completion);
+}
 
 const answerQuestion = async (question) => {
   // construct the prompt, with our question and the tools that the chain can use
@@ -214,7 +215,7 @@ const answerQuestion = async (question) => {
 
   // allow the LLM to iterate until it finds a final answer
   while (true) {
-    const response = await completePrompt(prompt);
+    const response = await getCompletion(prompt);
 
     // add this to the prompt
     prompt += response;
@@ -231,11 +232,14 @@ const answerQuestion = async (question) => {
           actionInput = actionInput.replace(/```.+/gi, "```");
           actionInput = actionInput.split("```")[1];
         }
-        else if (actionInput.indexOf(')()') >= 0) {
+        if (actionInput.indexOf(')()') >= 0) {
           actionInput = actionInput.split(')()')[0]+')()'.trim();
         }
-        else if (actionInput.indexOf('```') >= 0) {
+        if (actionInput.indexOf('```') >= 0) {
           actionInput = actionInput.split('```\n')[0].trim();
+        }
+        else if (actionInput.startsWith('|')) {
+          actionInput = actionInput.substring(1).trim();
         }
         else {
           actionInput = actionInput.split('\n\n')[0].trim();
@@ -266,7 +270,7 @@ const mergeHistory = async (question, history) => {
   const prompt = mergeTemplate
     .replace("${question}", question)
     .replace("${history}", history);
-  return await completePrompt(prompt);
+  return await getCompletion(prompt);
 };
 
 process.stdout.write(`${colour.cyan}Initialising built-in tools: `);

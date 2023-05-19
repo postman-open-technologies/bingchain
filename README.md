@@ -1,6 +1,6 @@
 # 🕵️🔗 BingChain
 
-This is an evolution of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~300 lines of core code. In essence, it is a multi-model LLM-powered chat application that is able to use tools (Microsoft **Bing** search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, JsFiddle creation, image and video preview, and a scientific calculator, as well as meta-tools such as `list`, `disable`, `reset` and `debug`) in order to build a **chain** of thought to hold conversations and answer questions.
+This is an evolution of [langchain-mini](https://github.com/ColinEberhardt/langchain-mini), a very simple re-implementation of [LangChain](https://github.com/hwchase17/langchain), in ~350 lines of core code. In essence, it is a multi-model LLM-powered chat application that is able to use tools (Microsoft **Bing** search, URL retrieval, API plugin installation, API calls, a Javascript sandbox, JsFiddle creation, image and video preview, and a scientific calculator, as well as meta-tools such as `list`, `disable`, `reset` and `debug`) in order to build a **chain** of thought to hold conversations and answer questions.
 
 Here's an example:
 
@@ -43,6 +43,8 @@ GUI=1
 #SEED_QUERIES=1
 #PROMPT_OVERRIDE=Riddle me this! ${question}
 ```
+
+You can also set `PROVIDER=anthropic` (with a relevant `ANTHROPIC_API_KEY`, `MODEL` and `TOKEN_LIMIT`) to use an alternative LLM/API provider.
 
 Set the token limit to the advertised limit of the model you are using, so 32768 for `gpt-4`, 4096 for `text-davinci-003` and 2048 for `text-curie-001`.
 
